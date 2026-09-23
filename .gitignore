@@ -1,0 +1,24 @@
+# Runtime and Auth State (CRITICAL: Do not commit active session credentials)
+chrome_profile/
+browser_session_state.json
+*.log
+
+# Generated Media and Artifacts
+screenshot.png
+screenshot*.png
+*.png
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+
+# OS and Editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
