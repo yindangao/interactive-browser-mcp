@@ -3,8 +3,8 @@
 ## 1. Architectural Philosophy: The Shared Interactive Browser
 This MCP server provides a high-performance, human-and-agent shared browser environment running on official Google Chrome over Chrome DevTools Protocol (CDP) with active corporate Single Sign-On (SSO / MFA / PingFederate) session cookies.
 
-- **Visual Co-Presence**: The user and agent share the exact same visible browser window in real-time.
-- **Human-in-the-Loop Assist**: The user can assist with hardware MFA tokens (YubiKey), Push approvals, or CAPTCHAs in the open window.
+- **Quiet Background Automation by Default**: The agent performs fast, low-overhead tasks silently in the background (querying REST APIs via `evaluate_js`, parsing DOM structures) without hijacking user focus.
+- **Visible Interactivity on Demand**: The browser is always accessible when human interaction matters. The user can assist with hardware MFA tokens (YubiKey), push approvals, or CAPTCHAs directly in the open window.
 - **Persistent Detached Daemon**: The browser runs as an independent daemon on port 9222; restarting or disconnecting the MCP server never terminates the user's active window or tabs.
 - **Direct REST API Preference**: When interacting with Jira, Confluence, ServiceNow, or internal portals, prefer direct REST API calls via `evaluate_js` (`window.fetch()`) over manual DOM clicking or scraping.
   - Internal enterprise tools expose rich JSON REST APIs.

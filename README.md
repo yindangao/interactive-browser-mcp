@@ -8,10 +8,10 @@ An API-first, production-grade Model Context Protocol (MCP) server for enterpris
 
 This server is designed around a single guiding principle: **the browser is a shared workspace for the human user and the AI agent.**
 
-Unlike traditional web scraping or automated test runners that spin up isolated, hidden browsers, this MCP server connects directly to a live, visible browser where both user and agent collaborate:
-- **Visual Co-Presence**: The user sees exactly what the agent is doing in real-time. There are no surprise background actions or hidden browser states.
-- **Human-in-the-Loop Assist**: When a website requires complex CAPTCHAs, hardware security keys (YubiKey), Symantec VIP MFA, or biometric approval, the user simply steps in and completes it in the open window. The agent immediately detects completion and resumes work.
-- **Shared Context and Muscle Memory**: The browser retains the user's enterprise bookmarks, Google Password Manager, corporate single sign-on (SSO), and authenticated cookies.
+Unlike traditional web scraping or automated test runners that spin up isolated, hidden browsers, this MCP server connects directly to the user's live browser where both can collaborate seamlessly:
+- **Quiet Background Automation by Default**: The agent performs fast, low-overhead tasks silently in the background (such as querying internal REST APIs via `evaluate_js`, parsing DOM nodes, or inspecting tabs) without hijacking focus or disrupting the user's flow.
+- **Visible Interactivity on Demand**: The browser is always accessible when human interaction matters. When a flow encounters a complex CAPTCHA, hardware security key (YubiKey), Symantec VIP MFA, or ambiguous step, the user steps into the open window to assist, and the agent picks up immediately once completed.
+- **Shared Credentials and Muscle Memory**: The browser retains the user's authentic enterprise profile, bookmarks, corporate single sign-on (SSO), and Google Password Manager.
 
 ---
 
