@@ -4,6 +4,38 @@ An API-first, production-grade Model Context Protocol (MCP) server for enterpris
 
 ---
 
+## Core Philosophy: The Shared Interactive Browser
+
+This server is designed around a single guiding principle: **the browser is a shared workspace for the human user and the AI agent.**
+
+Unlike traditional web scraping or automated test runners that spin up isolated, hidden browsers, this MCP server connects directly to a live, visible browser where both user and agent collaborate:
+- **Visual Co-Presence**: The user sees exactly what the agent is doing in real-time. There are no surprise background actions or hidden browser states.
+- **Human-in-the-Loop Assist**: When a website requires complex CAPTCHAs, hardware security keys (YubiKey), Symantec VIP MFA, or biometric approval, the user simply steps in and completes it in the open window. The agent immediately detects completion and resumes work.
+- **Shared Context and Muscle Memory**: The browser retains the user's enterprise bookmarks, Google Password Manager, corporate single sign-on (SSO), and authenticated cookies.
+
+---
+
+## Architectural Tenets
+
+To preserve this collaborative philosophy, the infrastructure layer strictly adheres to three non-negotiable rules:
+
+### Official Google Chrome Over Test Chromium
+- The server resolves and launches the official enterprise **Google Chrome** binary (`/Applications/Google Chrome.app`), never Playwright's bundled "Google Chrome for Testing".
+- Automated test binaries strip out Google account sync, corporate single sign-on, and Google Password Manager. Official Google Chrome preserves all three.
+- The persistent profile directory (`.data/chrome_profile`) stores full user settings, extensions, bookmarks, and sessions across machine reboots.
+
+### Detached Background Daemon
+- The browser process is spawned as a detached system daemon using `start_new_session=True`.
+- It lives independently from the Python runtime or MCP server process.
+- Restarting, upgrading, or crashing the MCP server **never closes the browser window** or terminates active tabs. The user's work is never interrupted.
+
+### Chrome DevTools Protocol (CDP) Exclusively
+- Automation connects strictly via CDP on port `9222` (`http://127.0.0.1:9222`).
+- On server shutdown, the client only disconnects the CDP socket (`browser.disconnect()`) without killing the host process.
+- **Never replace this with `launch_persistent_context()`**: Playwright's internal persistent context API assumes CI/CD ownership, spawns test-runner binaries, and kills the browser process upon exit. Tool refactoring must never alter this daemon architecture.
+
+---
+
 ## Highlights
 
 - **Lean 12-Tool Architecture**: Modular, declarative design separating perception, interaction, tab management, and script execution.

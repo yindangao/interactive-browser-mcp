@@ -1,12 +1,15 @@
 # interactive-browser-mcp Best Practices & Tool Reference
 
-## 1. Architectural Philosophy: The Lean 12-Tool Suite
-This MCP server provides a high-performance, token-efficient browser automation environment running on Chromium with active corporate Single Sign-On (SSO / MFA / PingFederate) session cookies.
+## 1. Architectural Philosophy: The Shared Interactive Browser
+This MCP server provides a high-performance, human-and-agent shared browser environment running on official Google Chrome over Chrome DevTools Protocol (CDP) with active corporate Single Sign-On (SSO / MFA / PingFederate) session cookies.
 
-**Key Rule: Always prefer direct REST API calls via `evaluate_js` over manual DOM clicking or scraping.**
-- Internal enterprise tools (Jira, Confluence, ServiceNow, ADAM) expose rich JSON REST APIs.
-- When `evaluate_js` runs `window.fetch()`, the browser automatically includes all necessary authentication cookies, CSRF tokens (`JSESSIONID`, `atlassian.xsrf.token`), and headers.
-- REST queries are instantaneous (~200ms), 100% deterministic, and consume 10x fewer tokens than full page reads.
+- **Visual Co-Presence**: The user and agent share the exact same visible browser window in real-time.
+- **Human-in-the-Loop Assist**: The user can assist with hardware MFA tokens (YubiKey), Push approvals, or CAPTCHAs in the open window.
+- **Persistent Detached Daemon**: The browser runs as an independent daemon on port 9222; restarting or disconnecting the MCP server never terminates the user's active window or tabs.
+- **Direct REST API Preference**: When interacting with Jira, Confluence, ServiceNow, or internal portals, prefer direct REST API calls via `evaluate_js` (`window.fetch()`) over manual DOM clicking or scraping.
+  - Internal enterprise tools expose rich JSON REST APIs.
+  - When `evaluate_js` runs `window.fetch()`, the browser automatically includes all necessary authentication cookies, CSRF tokens (`JSESSIONID`, `atlassian.xsrf.token`), and headers.
+  - REST queries are instantaneous (~200ms), 100% deterministic, and consume 10x fewer tokens than full page reads.
 
 ---
 
