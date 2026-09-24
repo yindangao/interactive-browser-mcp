@@ -66,10 +66,12 @@ Playwright's high-level `launch_persistent_context()` API assumes exclusive proc
 
 ## Highlights
 
+- **Shared Collaborative Workspace**: Designed for human-and-agent co-browsing, balancing quiet background execution with visible interaction when needed.
+- **Detached Native Chrome Daemon**: Automatically resolves official enterprise Google Chrome, spawns an independent daemon on port 9222, and attaches via CDP so server restarts never close active tabs.
 - **Lean 12-Tool Architecture**: Modular, declarative design separating perception, interaction, tab management, and script execution.
 - **Smart DOM Perception (`browse_page`)**: Automated DOM boilerplate pruning (headers, footers, mega-menus, modals) with outline and link discovery modes.
 - **API-First Automation (`evaluate_js`)**: Directly queries internal REST endpoints (Jira, Confluence, ServiceNow) via `window.fetch()` leveraging active SSO session cookies.
-- **SSO / MFA Persistence**: Performs interactive login once; persists session storage state (cookies, local storage) in `.data/` for subsequent headless/visible runs.
+- **SSO and MFA Persistence**: Performs interactive login once; persists session storage state (cookies, local storage) in `.data/` and maintains persistent corporate identity across runs.
 - **Isolated Runtime Storage**: Chrome profile caches and session states reside in `.data/`, keeping the repository root pristine.
 
 ---
@@ -97,17 +99,17 @@ Playwright's high-level `launch_persistent_context()` API assumes exclusive proc
 
 ```text
 personal_agent/interactive-browser-mcp/
-├── mcp_server.py             # Top-level MCP server entrypoint
+├── mcp_server.py             # Top-level MCP server entrypoint with runtime fallbacks
 ├── pyproject.toml            # Python packaging metadata
-├── requirements.txt          # Pip dependencies
-├── instructions.md           # LLM agent usage guidelines
+├── requirements.txt          # Pip dependencies (mcp, playwright)
+├── instructions.md           # LLM agent usage guidelines and workflow patterns
 ├── schemas/                  # Exported MCP tool JSON schemas
 │
 ├── browser_mcp/              # Core Python package
-│   ├── config.py             # Path resolution and environment defaults
+│   ├── config.py             # Chrome path resolution, profile paths, and environment defaults
 │   ├── server.py             # MCP server lifecycle and stdio transport
 │   ├── core/
-│   │   ├── session.py        # Playwright lifecycle, CDP reconnect, tab routing
+│   │   ├── session.py        # Detached Chrome daemon lifecycle, CDP reconnect, tab routing
 │   │   └── auth.py           # SSO/MFA detection and cookie persistence
 │   ├── dom/
 │   │   ├── reader.py         # Noise-pruned DOM-to-markdown conversion
@@ -119,24 +121,57 @@ personal_agent/interactive-browser-mcp/
 │       └── script.py         # evaluate_js, take_screenshot
 │
 ├── tests/
-│   └── test_browser_suite.py # Regression test suite
+│   └── test_browser_suite.py # 5-phase test suite (schema, live session, DOM, actions, tools)
 └── .data/                    # Isolated runtime data (ignored in git)
-    ├── chrome_profile/
-    └── browser_session_state.json
+    ├── chrome_profile/       # Persistent user profile (bookmarks, credentials, cookies)
+    └── browser_session_state.json # Serialized session state metadata
 ```
 
 ---
 
 ## Installation & Setup
 
+### 1. Environment Setup
+
 ```bash
-# 1. Install dependencies
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# (Optional) Install Playwright Chromium fallback if official Google Chrome is not installed
 playwright install chromium
+```
 
-# 2. Run the test suite
+### 2. Run the Verification Suite
+
+Run the automated 5-phase test suite to verify tool schema registration, daemon launching, CDP attachment, and DOM extraction:
+
+```bash
 python tests/test_browser_suite.py
+```
 
-# 3. Start MCP server over stdio
+### 3. MCP Server Registration
+
+Add the server entry to your client configuration (e.g., `mcp_config.json`, Claude Desktop, or Cursor):
+
+```json
+{
+  "mcpServers": {
+    "interactive-browser-mcp": {
+      "command": "/path/to/venv/bin/python",
+      "args": [
+        "/path/to/personal_agent/interactive-browser-mcp/mcp_server.py"
+      ]
+    }
+  }
+}
+```
+
+Or start the server directly over stdio:
+
+```bash
 python mcp_server.py
 ```
