@@ -15,24 +15,52 @@ Unlike traditional web scraping or automated test runners that spin up isolated,
 
 ---
 
-## Architectural Tenets
+## Architectural Tenets and Design Rationale
 
-To preserve this collaborative philosophy, the infrastructure layer strictly adheres to three non-negotiable rules:
+To support the shared interactive philosophy, the infrastructure layer strictly adheres to three foundational choices. Understanding why these choices were made prevents accidental regressions during future refactorings.
 
 ### Official Google Chrome Over Test Chromium
-- The server resolves and launches the official enterprise **Google Chrome** binary (`/Applications/Google Chrome.app`), never Playwright's bundled "Google Chrome for Testing".
-- Automated test binaries strip out Google account sync, corporate single sign-on, and Google Password Manager. Official Google Chrome preserves all three.
-- The persistent profile directory (`.data/chrome_profile`) stores full user settings, extensions, bookmarks, and sessions across machine reboots.
+
+**The Rationale**:
+An enterprise AI assistant cannot function effectively in a sterile sandbox. It must operate within the user's authentic corporate environment, inheriting existing identities, security permissions, and trusted certificates.
+
+**Key Benefits**:
+- **Seamless Enterprise Authentication**: Corporate Single Sign-On (PingFederate, Okta, Microsoft Online) relies on device enrollment, trusted root certificates, and domain tokens. Official Google Chrome integrates with macOS keychain and enterprise certificates natively.
+- **Google Password Manager and Auto-fill**: Saved credentials and password manager integration remain active, avoiding repetitive manual credential prompts.
+- **Extensions and Bookmarks**: The user's bookmarks, internal intranet shortcuts, and enterprise Chrome extensions are readily available.
+
+**Failure Mode Prevented**:
+Playwright's bundled "Google Chrome for Testing" and upstream Chromium binaries intentionally disable Google account sync, password managers, and enterprise policy integrations. Using test binaries creates an alienated sandbox where corporate logins fail and sessions cannot persist.
+
+---
 
 ### Detached Background Daemon
-- The browser process is spawned as a detached system daemon using `start_new_session=True`.
-- It lives independently from the Python runtime or MCP server process.
-- Restarting, upgrading, or crashing the MCP server **never closes the browser window** or terminates active tabs. The user's work is never interrupted.
 
-### Chrome DevTools Protocol (CDP) Exclusively
-- Automation connects strictly via CDP on port `9222` (`http://127.0.0.1:9222`).
-- On server shutdown, the client only disconnects the CDP socket (`browser.disconnect()`) without killing the host process.
-- **Never replace this with `launch_persistent_context()`**: Playwright's internal persistent context API assumes CI/CD ownership, spawns test-runner binaries, and kills the browser process upon exit. Tool refactoring must never alter this daemon architecture.
+**The Rationale**:
+The browser belongs to the user, not to the ephemeral Python process. Tool execution, server reloads, and AI agent lifecycles are inherently transient, while the user's research session is continuous.
+
+**Key Benefits**:
+- **Lifecycle Decoupling**: The MCP server can restart, crash, or be updated during active development without closing the user's browser window, terminating open tabs, or dropping active sessions.
+- **Sub-Second Tool Re-attachment**: Instead of paying a 5 to 10 second startup cost to cold-boot a new browser on every tool invocation, connecting to an already-warm daemon over CDP takes under 50 milliseconds.
+- **Uninterrupted Human Workflow**: The user can continue reading, typing, or inspecting pages in the open Chrome window even when the agent is idle or stopped.
+
+**Failure Mode Prevented**:
+Binding the browser process directly as a child of the Python runtime causes every server restart or script termination to abruptly kill the browser, losing all open tabs, unsaved text, and active session states.
+
+---
+
+### Chrome DevTools Protocol Exclusively
+
+**The Rationale**:
+The relationship between the agent and the browser is that of an "inspector and assistant", not an "owner and conqueror". Communication must happen over a standard remote inspection protocol that permits clean attachment and detachment.
+
+**Key Benefits**:
+- **Non-Destructive Teardown**: When the MCP server closes or the agent finishes a turn, calling `browser.disconnect()` cleanly detaches the socket while leaving Chrome, its tabs, and its runtime memory untouched.
+- **Concurrent Inspection**: Multiple automation tools, Python scripts, or Chrome DevTools windows can attach to the same running browser on port 9222 simultaneously without process contention.
+- **Standardized Foundation**: Tools interact through standard CDP primitives, decoupling the MCP server logic from Playwright's specific internal release cycle.
+
+**Failure Mode Prevented**:
+Playwright's high-level `launch_persistent_context()` API assumes exclusive process ownership designed for automated test suites. It passes restrictive command-line flags, overrides default profiles, and terminates the entire browser process upon script exit. Restricting Playwright to `connect_over_cdp()` ensures non-destructive, persistent collaboration.
 
 ---
 
