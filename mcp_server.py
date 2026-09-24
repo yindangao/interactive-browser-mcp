@@ -9,6 +9,14 @@ package_root = Path(__file__).resolve().parent
 if str(package_root) not in sys.path:
     sys.path.insert(0, str(package_root))
 
+# Ensure shared venv site-packages are accessible if not in current environment
+try:
+    import playwright
+except ImportError:
+    shared_venv = package_root.parent / "chat-with-gemini-mcp/.venv/lib/python3.12/site-packages"
+    if shared_venv.exists() and str(shared_venv) not in sys.path:
+        sys.path.insert(0, str(shared_venv))
+
 from browser_mcp.server import (
     server,
     session_instance as session_manager,
