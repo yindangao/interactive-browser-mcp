@@ -1,0 +1,42 @@
+{
+  "name": "browse_page",
+  "description": "Navigate the browser to a webpage (or read the active page) to return clean, noise-pruned Markdown content. Automatically strips headers, navigation bars, footers, and modal overlays to prevent context bloat. Supports CSS selector scoping and outline/links extraction modes.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Optional URL to navigate to. If omitted, reads and inspects the currently active page."
+      },
+      "wait_until": {
+        "type": "string",
+        "description": "Navigation wait strategy: 'domcontentloaded' (fast, default), 'load', or 'networkidle'. Prefer 'domcontentloaded' for SPAs (Jira, Teams, Confluence) to avoid long network-idle timeouts.",
+        "default": "domcontentloaded",
+        "enum": [
+          "domcontentloaded",
+          "load",
+          "networkidle"
+        ]
+      },
+      "selector": {
+        "type": "string",
+        "description": "Optional CSS selector to scope content extraction to a specific container (e.g. 'article', '#main-content', '.guide-body')."
+      },
+      "mode": {
+        "type": "string",
+        "description": "Extraction mode: 'content' (default, clean article markdown), 'outline' (headings H1-H6 hierarchy), or 'links' (markdown link directory).",
+        "default": "content",
+        "enum": [
+          "content",
+          "outline",
+          "links"
+        ]
+      },
+      "max_length": {
+        "type": "integer",
+        "description": "Maximum character length of returned content before graceful truncation. Defaults to 25000.",
+        "default": 25000
+      }
+    }
+  }
+}

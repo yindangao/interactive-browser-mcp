@@ -1,0 +1,23 @@
+{
+  "name": "tab_new",
+  "description": "Open a new browser tab, optionally navigating to a URL, and make it the active tab.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "url": {
+        "type": "string",
+        "description": "Optional URL to navigate to in the new tab. Defaults to 'about:blank'."
+      },
+      "wait_until": {
+        "type": "string",
+        "description": "Optional wait strategy: 'domcontentloaded' (default), 'load', or 'networkidle'.",
+        "default": "domcontentloaded",
+        "enum": [
+          "domcontentloaded",
+          "load",
+          "networkidle"
+        ]
+      }
+    }
+  }
+}

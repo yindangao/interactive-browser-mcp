@@ -1,0 +1,13 @@
+{
+  "name": "take_screenshot",
+  "description": "Capture a screenshot of the currently active browser page in the visible window. Useful for visually analyzing complex charts, layouts, or verifying page load state.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "output_path": {
+        "type": "string",
+        "description": "Optional custom absolute path to save the screenshot image file, e.g. /path/to/screenshot.png"
+      }
+    }
+  }
+}

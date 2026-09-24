@@ -1,4 +1,5 @@
 # Runtime and Auth State (CRITICAL: Do not commit active session credentials)
+.data/
 chrome_profile/
 browser_session_state.json
 *.log

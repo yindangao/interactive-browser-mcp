@@ -1,0 +1,13 @@
+{
+  "name": "tab_close",
+  "description": "Close a specific tab by its 0-based index from tab_list, or close the currently active tab if no index is provided.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "index": {
+        "type": "integer",
+        "description": "Optional 0-based index of the tab to close. If omitted, closes the active tab."
+      }
+    }
+  }
+}

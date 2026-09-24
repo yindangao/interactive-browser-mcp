@@ -1,0 +1,29 @@
+{
+  "name": "scroll_page",
+  "description": "Scroll the active page or a nested scrollable container (e.g. Teams chat history, Slack feeds, virtualized data tables) to trigger lazy loading / infinite scroll.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "direction": {
+        "type": "string",
+        "description": "Scroll direction: 'down' (default), 'up', 'top', or 'bottom'.",
+        "default": "down",
+        "enum": [
+          "down",
+          "up",
+          "top",
+          "bottom"
+        ]
+      },
+      "amount": {
+        "type": "integer",
+        "description": "Number of pixels to scroll. Defaults to 500.",
+        "default": 500
+      },
+      "selector": {
+        "type": "string",
+        "description": "Optional CSS selector of a specific scrollable container element. If omitted, automatically detects and scrolls nested scrollable containers or the window."
+      }
+    }
+  }
+}

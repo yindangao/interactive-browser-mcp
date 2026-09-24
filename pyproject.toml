@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "interactive-browser-mcp"
+version = "0.2.0"
+description = "Lean 12-tool persistent browser automation MCP server with CDP session management and enterprise SSO support"
+authors = [{ name = "Squiggly Team" }]
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "playwright>=1.40.0",
+]
+
+[project.scripts]
+interactive-browser-mcp = "browser_mcp.server:main"
+
+[tool.setuptools.packages.find]
+include = ["browser_mcp*"]

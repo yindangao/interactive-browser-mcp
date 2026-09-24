@@ -1,0 +1,21 @@
+{
+  "name": "click_element",
+  "description": "Click an interactive element (button, link, tab, accordion) on the active page. Supports standard CSS selectors (e.g. '#submit-btn', '.tab-ios') or plain text matching (e.g. 'Android', 'Submit'). Automatically scrolls element into view and highlights with a brief visual outline.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "selector": {
+        "type": "string",
+        "description": "CSS selector or plain text of the element to click (e.g. '#submit-button', 'text=\"Android\"', or 'iOS')."
+      },
+      "timeout_ms": {
+        "type": "integer",
+        "description": "Optional timeout in milliseconds. Defaults to 10000.",
+        "default": 10000
+      }
+    },
+    "required": [
+      "selector"
+    ]
+  }
+}

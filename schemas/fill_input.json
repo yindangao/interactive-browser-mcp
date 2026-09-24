@@ -1,0 +1,31 @@
+{
+  "name": "fill_input",
+  "description": "Type text into an input field, search box, or textarea. Optionally simulates pressing the 'Enter' key immediately after filling to submit forms or search queries in a single step.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "selector": {
+        "type": "string",
+        "description": "CSS selector of the input field or textarea (e.g. 'input[type=\"search\"]', '#query-input')."
+      },
+      "text": {
+        "type": "string",
+        "description": "Text value to type into the field."
+      },
+      "press_enter": {
+        "type": "boolean",
+        "description": "Whether to simulate pressing the Enter key immediately after typing the text. Defaults to false.",
+        "default": false
+      },
+      "timeout_ms": {
+        "type": "integer",
+        "description": "Optional timeout in milliseconds. Defaults to 10000.",
+        "default": 10000
+      }
+    },
+    "required": [
+      "selector",
+      "text"
+    ]
+  }
+}

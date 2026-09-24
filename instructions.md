@@ -1,25 +1,44 @@
-# interactive-browser-mcp Best Practices & Guidelines
+# interactive-browser-mcp Best Practices & Tool Reference
 
-## 1. Architectural Philosophy: API-First via Browser Runtime
-This MCP server controls an active Chromium instance connected over Chrome DevTools Protocol (CDP) or Playwright. The browser maintains active corporate Single Sign-On (SSO / MFA / PingFederate) session cookies.
+## 1. Architectural Philosophy: The Lean 12-Tool Suite
+This MCP server provides a high-performance, token-efficient browser automation environment running on Chromium with active corporate Single Sign-On (SSO / MFA / PingFederate) session cookies.
 
-**Key Rule:** **Always prefer direct REST API calls via `evaluate_js` over manual DOM clicking or scraping.**
+**Key Rule: Always prefer direct REST API calls via `evaluate_js` over manual DOM clicking or scraping.**
 - Internal enterprise tools (Jira, Confluence, ServiceNow, ADAM) expose rich JSON REST APIs.
 - When `evaluate_js` runs `window.fetch()`, the browser automatically includes all necessary authentication cookies, CSRF tokens (`JSESSIONID`, `atlassian.xsrf.token`), and headers.
-- REST queries are instantaneous (~200ms), 100% deterministic, and consume 10x fewer context window tokens than raw DOM dumps.
+- REST queries are instantaneous (~200ms), 100% deterministic, and consume 10x fewer tokens than full page reads.
 
 ---
 
-## 2. Standard Workflow Pattern
+## 2. The 12-Tool Topology
 
-### Step A: Verify or Establish Domain Context
-1. Check `session_status` to see if the browser is running and which page/tab is active.
-2. If the browser is on `about:blank` or a different domain, use `browse_page` with `url="https://<target-domain>"` to navigate to the origin and mount SSO cookies.
-   *Note: `browse_page` defaults to `wait_until="domcontentloaded"`, returning in <1s without freezing on background telemetry.*
+| Category | Tool | Best Used For |
+| :--- | :--- | :--- |
+| **Session & Auth** | `session_status` | Check active tab, title, CDP health, and cookie state. |
+| | `authenticate` | Surface visible browser for manual SSO/MFA sign-in when redirected. |
+| **Tab Management** | `tab_list` | Inspect all open browser tabs with index and active status. |
+| | `tab_new` | Open disposable tab for a separate task without polluting current state. |
+| | `tab_switch` | Focus a specific tab by 0-based index. |
+| | `tab_close` | Close a finished tab to release browser memory. |
+| **Perception** | `browse_page` | Noise-pruned markdown extraction. Strips headers/navs/modals. Supports `mode='outline'`, `mode='links'`, `mode='content'`, and `selector` scoping. |
+| | `take_screenshot` | Viewport visual capture for layout, QR codes, or visual verification. |
+| **Interaction** | `click_element` | Click buttons, tabs, accordions by CSS selector or plain text (e.g. `'#submit-btn'`, `'text="Android"'`). |
+| | `fill_input` | Fill search boxes or forms; optional `press_enter=True` executes search in 1 call. |
+| | `scroll_page` | Scroll window or nested scrollable containers (Teams chats, Slack feeds, Jira boards). |
+| **API & Extraction Engine** | `evaluate_js` | Run arbitrary JS, `fetch()` internal REST APIs with SSO cookies, or query DOM nodes. |
 
-### Step B: Execute API Calls via `evaluate_js`
+---
+
+## 3. High-Efficiency Workflow Patterns
+
+### Pattern A: Inspecting & Reading Web Pages
+1. **Quick Outline**: When landing on a large page, run `browse_page(mode="outline")` to see H1–H6 hierarchy in <100 tokens.
+2. **Targeted Reading**: Scope directly to the section you need using `browse_page(selector="#section-id")`.
+3. **Link Discovery**: Run `browse_page(mode="links")` to obtain a clean Markdown list of clickable links.
+4. **Clean Reading**: Default `browse_page()` automatically strips mega-menus, headers, footers, popups, and scripts, returning clean article content under the 25,000 char threshold.
+
+### Pattern B: REST API Querying via `evaluate_js`
 Wrap asynchronous code in an Immediately Invoked Function Expression (IIFE):
-
 ```javascript
 (async () => {
   const res = await fetch('/rest/api/2/issue/MYAT-10310', {
@@ -31,49 +50,23 @@ Wrap asynchronous code in an Immediately Invoked Function Expression (IIFE):
 })()
 ```
 
-For mutating calls (PUT / POST / DELETE):
-```javascript
-(async () => {
-  const res = await fetch('/rest/api/2/issue/MYAT-10310', {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Atlassian-Token': 'no-check'
-    },
-    body: JSON.stringify({
-      update: {
-        comment: [{ add: { body: "My automated comment" } }]
-      }
-    })
-  });
-  return { status: res.status, ok: res.ok };
-})()
+### Pattern C: Search & Form Submission
+Use `fill_input` with `press_enter=True` to execute in one turn:
+```json
+{
+  "selector": "input[type='search']",
+  "text": "BYOD mobile enrollment",
+  "press_enter": true
+}
 ```
 
-### Step C: Structured DOM Reading (When API is Unavailable)
-If no REST API is available, extract only targeted text/attributes via `evaluate_js`:
-```javascript
-(() => {
-  const rows = Array.from(document.querySelectorAll('.data-row'));
-  return rows.map(r => ({
-    name: r.querySelector('.title')?.innerText.trim(),
-    status: r.querySelector('.badge')?.innerText.trim()
-  }));
-})()
+### Pattern D: Virtualized Infinite Feeds
+For modern SPAs (Teams chat, Slack, Jira swimlanes) where older messages load on scroll:
+```json
+{
+  "direction": "up",
+  "amount": 800,
+  "selector": ".chat-message-list"
+}
 ```
-Never return raw HTML trees or huge unparsed DOM chunks into the chat context.
-
----
-
-## 3. Tab Management Protocol
-- **List open tabs**: `tab_list` returns 0-based index, title, URL, and active flag.
-- **Switch tab**: `tab_switch(index=N)` focuses the target tab.
-- **Open new tab**: `tab_new(url="https://...")` keeps workflows separate and avoids polluting existing work.
-- **Close tab**: `tab_close(index=N)` cleans up disposable tabs after completion.
-
----
-
-## 4. Authentication Recovery
-- If an API or page returns `401 Unauthorized` or redirects to PingFederate / Okta / Azure AD:
-  1. Call `authenticate(url="https://<target-domain>")` to surface the visible browser window for user MFA/SSO.
-  2. The server monitors and auto-saves the authenticated session state upon completion.
+If `selector` is omitted, `scroll_page` automatically searches for the primary nested scrollable container before falling back to the window.

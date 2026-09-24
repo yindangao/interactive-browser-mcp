@@ -1,0 +1,16 @@
+{
+  "name": "tab_switch",
+  "description": "Switch active focus to a specific tab using its 0-based integer index from tab_list.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "index": {
+        "type": "integer",
+        "description": "The 0-based index of the tab to switch to."
+      }
+    },
+    "required": [
+      "index"
+    ]
+  }
+}

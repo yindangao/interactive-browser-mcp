@@ -1,0 +1,8 @@
+{
+  "name": "tab_list",
+  "description": "List all currently open tabs in the browser session, returning their 0-based index, URL, title, and whether each tab is currently active.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}

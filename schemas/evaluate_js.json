@@ -1,0 +1,16 @@
+{
+  "name": "evaluate_js",
+  "description": "Execute custom JavaScript code directly in the active browser page context and return the result. PRIMARY TOOL for interacting with internal web applications: use fetch() to query/mutate authenticated REST APIs (e.g. Jira /rest/api/2/..., Confluence, ServiceNow) with existing corporate SSO session cookies, or extract structured DOM data. For asynchronous operations, always wrap in an async IIFE: '(async () => { const res = await fetch(...); return await res.json(); })()'.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "script": {
+        "type": "string",
+        "description": "The JavaScript code string to execute. Wrap async code in an IIFE: '(async () => { ... })()'."
+      }
+    },
+    "required": [
+      "script"
+    ]
+  }
+}

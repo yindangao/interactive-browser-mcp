@@ -1,0 +1,8 @@
+{
+  "name": "session_status",
+  "description": "Retrieve status of the current browser session: active page URL, page title, open tab count, CDP connection status, and whether login cookies exist, without making network requests.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}
