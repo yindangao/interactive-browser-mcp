@@ -53,8 +53,8 @@ Wrap asynchronous code in an Immediately Invoked Function Expression (IIFE):
 })()
 ```
 
-### Pattern C: Search & Form Submission
-Use `fill_input` with `press_enter=True` to execute in one turn:
+### Pattern C: Form Filling and Interactive Clicking
+1. **Form Submission in One Turn**: Use `fill_input` with `press_enter=True` to fill and submit searches:
 ```json
 {
   "selector": "input[type='search']",
@@ -62,6 +62,19 @@ Use `fill_input` with `press_enter=True` to execute in one turn:
   "press_enter": true
 }
 ```
+2. **Clicking Buttons or Links**: Use `click_element` with either standard CSS selectors or plain text:
+```json
+{
+  "selector": "button:has-text('Enroll Now')"
+}
+```
+Or simply by label:
+```json
+{
+  "selector": "iOS Setup Guide"
+}
+```
+*Note: `click_element` automatically flashes an amber border on the target element before clicking, providing visual feedback to the user.*
 
 ### Pattern D: Virtualized Infinite Feeds
 For modern SPAs (Teams chat, Slack, Jira swimlanes) where older messages load on scroll:
@@ -73,3 +86,36 @@ For modern SPAs (Teams chat, Slack, Jira swimlanes) where older messages load on
 }
 ```
 If `selector` is omitted, `scroll_page` automatically searches for the primary nested scrollable container before falling back to the window.
+
+### Pattern E: Multi-Tab Investigation and Isolation
+When you need to investigate a link or documentation without losing your current form or working state:
+1. **Open New Tab**: `tab_new(url="https://one.walmart.com/...")`
+2. **Inspect Open Tabs**: `tab_list()` to verify open tabs and their indices.
+3. **Switch Between Contexts**: `tab_switch(index=1)`
+4. **Clean Up Disposable Tabs**: `tab_close(index=1)` when research is complete to conserve system resources.
+
+### Pattern F: Session Verification & Human-in-the-Loop Authentication
+1. **Check Session Health**: Call `session_status()` to inspect active URL, page title, and authentication state.
+2. **Escalate to User for MFA**: If a corporate portal redirects to PingFederate, Okta, or a 2FA prompt:
+   - Call `authenticate(url="https://login.walmart.com/...")` to ensure the window is visible.
+   - Prompt the user directly to complete their hardware key, push notification, or biometric verification.
+   - The tool waits until the login redirect succeeds and automatically serializes the updated session tokens.
+
+### Pattern G: Visual Inspection & Media Capture
+Use `take_screenshot` when visual verification is essential:
+- Capturing enrollment QR codes (e.g., BYOD enrollment setup on mobile).
+- Verifying data visualizations, charts, or complex layouts that cannot be represented in plain text.
+- Inspecting rendered DOM state when selectors are ambiguous.
+```json
+{
+  "output_path": ".data/enrollment_qr_code.png"
+}
+```
+
+---
+
+## 4. Behavioral Guidelines for Agents
+
+- **Respect the Shared Space**: Never close tabs that the user is actively working in. Only close disposable tabs that you explicitly opened via `tab_new`.
+- **Avoid Screen Thrashing**: Prefer reading clean content via `browse_page` or querying REST endpoints via `evaluate_js` rather than clicking through 10 intermediate UI screens.
+- **Never Brute-Force Auth**: When encountering SSO / MFA / CAPTCHA barriers, immediately escalate to the user with `authenticate` rather than guessing or looping on login forms.
