@@ -2,7 +2,7 @@
 
 import os
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Optional
 
 # Project root: personal_agent/interactive-browser-mcp
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,6 +25,47 @@ elif (BASE_DIR / "chrome_profile").exists():
     CHROME_PROFILE_DIR = BASE_DIR / "chrome_profile"
 else:
     CHROME_PROFILE_DIR = DATA_DIR / "chrome_profile"
+
+def resolve_chrome_executable() -> Optional[str]:
+    """Resolve path to official Google Chrome, Chromium, or Playwright bundled binary."""
+    # 1. Explicit env override
+    env_path = os.environ.get("CHROME_PATH")
+    if env_path and Path(env_path).exists():
+        return env_path
+
+    # 2. Native Google Chrome on macOS (official enterprise app)
+    mac_chrome = Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    if mac_chrome.exists():
+        return str(mac_chrome)
+
+    # 3. Linux official Google Chrome or Chromium
+    for linux_path in (
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/chromium",
+    ):
+        if Path(linux_path).exists():
+            return linux_path
+
+    # 4. Windows Google Chrome
+    for win_path in (
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    ):
+        if Path(win_path).exists():
+            return win_path
+
+    # 5. Fallback to Playwright's cached Chromium if system Chrome not installed
+    ms_playwright_dir = Path.home() / "Library/Caches/ms-playwright"
+    if ms_playwright_dir.exists():
+        chromium_paths = list(ms_playwright_dir.glob("chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium"))
+        if not chromium_paths:
+            chromium_paths = list(ms_playwright_dir.glob("chromium-*/chrome-mac*/*.app/Contents/MacOS/*"))
+        if chromium_paths:
+            return str(chromium_paths[0])
+
+    return None
 
 # Browser session state file resolution
 _env_state = os.environ.get("BROWSER_SESSION_STATE")

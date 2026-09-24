@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+import os
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List, Dict, Any
@@ -21,6 +23,7 @@ from browser_mcp.config import (
     SESSION_STATE_FILE,
     DEFAULT_PAGE_LOAD_TIMEOUT_MS,
     DEFAULT_AUTH_TIMEOUT_S,
+    resolve_chrome_executable,
 )
 from browser_mcp.core.auth import AuthManager
 
@@ -49,7 +52,7 @@ class BrowserSession:
         self.is_cdp_connection: bool = False
 
     async def start(self, url: Optional[str] = None, headless: bool = False) -> bool:
-        """Connect to an existing Chromium instance via CDP or launch a new persistent context."""
+        """Connect to an existing Google Chrome instance via CDP or launch a detached daemon."""
         try:
             if not self.playwright:
                 self.playwright = await async_playwright().start()
@@ -75,27 +78,58 @@ class BrowserSession:
                     await self.page.goto(url, wait_until="domcontentloaded")
                 return True
             except Exception as cdp_err:
-                logger.info("CDP connect failed (%s), launching persistent browser...", cdp_err)
+                logger.info("CDP connect failed (%s), launching detached browser daemon...", cdp_err)
+                self.is_cdp_connection = False
 
-            # Attempt 2: Launch fresh persistent browser instance with remote debugging port
+            # Attempt 2: Launch detached browser daemon process automatically
+            executable_path = resolve_chrome_executable()
+            if not executable_path:
+                raise FileNotFoundError("Google Chrome or Chromium executable not found on host.")
+
             self.profile_dir.mkdir(parents=True, exist_ok=True)
-            self.context = await self.playwright.chromium.launch_persistent_context(
-                user_data_dir=str(self.profile_dir),
-                headless=headless,
-                args=[
-                    f"--remote-debugging-port={self.cdp_port}",
-                    "--disable-blink-features=AutomationControlled",
-                ],
-                viewport={"width": 1280, "height": 800},
+            cmd = [
+                executable_path,
+                f"--remote-debugging-port={self.cdp_port}",
+                f"--user-data-dir={self.profile_dir}",
+                "--disable-blink-features=AutomationControlled",
+                "--no-first-run",
+                "--no-default-browser-check",
+            ]
+            if headless:
+                cmd.append("--headless=new")
+
+            logger.info("Launching detached Chrome daemon (%s) on port %d with profile %s", executable_path, self.cdp_port, self.profile_dir)
+            subprocess.Popen(
+                cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
             )
-            self.is_cdp_connection = False
+
+            # Wait and connect over CDP (up to 12 attempts = 6 seconds)
+            for attempt in range(12):
+                try:
+                    await asyncio.sleep(0.5)
+                    self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
+                    self.is_cdp_connection = True
+                    break
+                except Exception:
+                    pass
+
+            if not self.browser or not self.is_cdp_connection:
+                raise TimeoutError(f"Failed to connect to the detached browser on port {self.cdp_port}.")
+
+            if self.browser.contexts:
+                self.context = self.browser.contexts[0]
+            else:
+                self.context = await self.browser.new_context()
 
             if self.context.pages:
-                self.page = self.context.pages[0]
+                self.page = self.context.pages[-1]
             else:
                 self.page = await self.context.new_page()
 
-            logger.info("Launched persistent Chromium context (headless=%s)", headless)
+            logger.info("Successfully launched and connected to detached browser daemon via CDP!")
             if url:
                 await self.page.goto(url, wait_until="domcontentloaded")
             return True
@@ -269,7 +303,10 @@ class BrowserSession:
             if self.context:
                 await self.auth_manager.save_storage_state(self.context)
             if self.browser:
-                await self.browser.close()
+                if self.is_cdp_connection:
+                    await self.browser.disconnect()
+                else:
+                    await self.browser.close()
             elif self.context:
                 await self.context.close()
             if self.playwright:
@@ -281,3 +318,4 @@ class BrowserSession:
             self.context = None
             self.page = None
             self.playwright = None
+            self.is_cdp_connection = False
