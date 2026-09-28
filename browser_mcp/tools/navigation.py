@@ -10,8 +10,9 @@ NAVIGATION_TOOLS: List[Tool] = [
         name="browse_page",
         description=(
             "Extract clean, noise-pruned content from a web page in Markdown format. "
-            "Strips header/footer mega-menus, navigation boilerplate, cookie banners, and modals. "
-            "Supports outline mode, link discovery, and targeted selector extraction."
+            "If 'url' is provided, navigates to it; if omitted, inspects the current active tab. "
+            "Supports 'wait_for_selector' to wait for dynamic elements in single-page apps (Jira, Confluence, Gemini) "
+            "before reading, 'selector' to scope extraction, and 'mode' ('content', 'outline', 'links')."
         ),
         inputSchema={
             "type": "object",
@@ -25,6 +26,15 @@ NAVIGATION_TOOLS: List[Tool] = [
                     "enum": ["load", "domcontentloaded", "networkidle"],
                     "default": "domcontentloaded",
                     "description": "Navigation lifecycle state to wait for."
+                },
+                "wait_for_selector": {
+                    "type": "string",
+                    "description": "Optional CSS selector to wait for before extracting content. Essential for single-page applications (Jira, Confluence, Gemini, GitHub) that render content or stream responses asynchronously."
+                },
+                "wait_for_timeout_ms": {
+                    "type": "integer",
+                    "default": 10000,
+                    "description": "Max milliseconds to wait for wait_for_selector before extracting content (default 10000)."
                 },
                 "selector": {
                     "type": "string",
@@ -107,6 +117,8 @@ async def handle_browse_page(session: BrowserSession, args: Dict[str, Any]) -> D
         session.page,
         url=args.get("url"),
         wait_until=args.get("wait_until", "domcontentloaded"),
+        wait_for_selector=args.get("wait_for_selector"),
+        wait_for_timeout_ms=args.get("wait_for_timeout_ms", 10000),
         selector=args.get("selector"),
         mode=args.get("mode", "content"),
         max_length=args.get("max_length", 25000),

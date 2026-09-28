@@ -160,9 +160,10 @@ class BrowserSession:
         pages = self.context.pages if self.context else []
         for idx, p in enumerate(pages):
             try:
+                title = await asyncio.wait_for(p.title(), timeout=2.0)
                 tabs.append({
                     "index": idx,
-                    "title": await p.title(),
+                    "title": title,
                     "url": p.url,
                     "is_active": (p == self.page),
                 })
@@ -170,7 +171,7 @@ class BrowserSession:
                 tabs.append({
                     "index": idx,
                     "title": "<error reading tab>",
-                    "url": "<unknown>",
+                    "url": getattr(p, "url", "<unknown>"),
                     "is_active": (p == self.page),
                 })
 

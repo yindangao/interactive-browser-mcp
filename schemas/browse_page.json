@@ -18,6 +18,15 @@
           "networkidle"
         ]
       },
+      "wait_for_selector": {
+        "type": "string",
+        "description": "Optional CSS selector to wait for before extracting content. Essential for single-page applications (Jira, Confluence, Gemini, GitHub) that render content or stream responses asynchronously."
+      },
+      "wait_for_timeout_ms": {
+        "type": "integer",
+        "description": "Max milliseconds to wait for wait_for_selector before extracting content (default 10000).",
+        "default": 10000
+      },
       "selector": {
         "type": "string",
         "description": "Optional CSS selector to scope content extraction to a specific container (e.g. 'article', '#main-content', '.guide-body')."

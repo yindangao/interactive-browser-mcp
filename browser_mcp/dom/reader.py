@@ -17,6 +17,8 @@ class DOMReader:
         page: Page,
         url: Optional[str] = None,
         wait_until: str = "domcontentloaded",
+        wait_for_selector: Optional[str] = None,
+        wait_for_timeout_ms: int = 10000,
         selector: Optional[str] = None,
         mode: str = "content",
         max_length: int = 25000,
@@ -28,6 +30,12 @@ class DOMReader:
         try:
             if url and url != page.url:
                 await page.goto(url, wait_until=wait_until, timeout=45000)
+
+            if wait_for_selector:
+                try:
+                    await page.wait_for_selector(wait_for_selector, timeout=wait_for_timeout_ms)
+                except Exception as wait_err:
+                    logger.warning("wait_for_selector '%s' timed out after %sms: %s", wait_for_selector, wait_for_timeout_ms, wait_err)
 
             title = await page.title()
             current_url = page.url
@@ -41,8 +49,8 @@ class DOMReader:
                             return nodes
                                 .filter(n => n.innerText && n.innerText.trim().length > 0 && n.offsetParent !== null)
                                 .map(n => ({
-                                    level: parseInt(n.tagName.substring(1)),
-                                    text: n.innerText.trim().replace(/\s+/g, ' ')
+                                     level: parseInt(n.tagName.substring(1)),
+                                     text: n.innerText.trim().replace(/\s+/g, ' ')
                                 }));
                         }""")
                         outline_lines = [
@@ -72,84 +80,114 @@ class DOMReader:
                         content = "\n".join(link_lines) if link_lines else "No links found."
 
                     else:
-                        # mode == "content": Clean DOM reading with boilerplate scrubbing
+                        # mode == "content": Clean DOM reading with custom Web Component & Shadow DOM support
                         markdown = await page.evaluate(r"""(sel) => {
                             const root = sel ? document.querySelector(sel) : (document.querySelector('main, article, [role="main"]') || document.body);
                             if (!root) return "";
 
-                            const clone = root.cloneNode(true);
-
-                            // Aggressive noise pruning: headers, navs, mega-menus, footers, modals, tracking
                             const noiseSelectors = [
                                 'script', 'style', 'noscript', 'svg', 'iframe',
                                 'header', 'footer', 'nav',
                                 '.cmp-experiencefragment--header', '#header-container',
                                 '.cmp-experiencefragment--footer', '#footer-container',
                                 '.mega-menu', '.desktop-nav', '.mobile-nav', '.global-nav',
-                                '.modal', '.dialog', '[role="dialog"]', '[role="alertdialog"]',
-                                '.cookie-banner', '.banner-notice', '[aria-hidden="true"]',
+                                '.cookie-banner', '.banner-notice',
                                 '.off-the-clock-popup', '.user-menu-dropdown', '.quick-links-dropdown'
                             ];
-                            
-                            noiseSelectors.forEach(s => {
-                                clone.querySelectorAll(s).forEach(el => el.remove());
-                            });
 
-                            function elementToMarkdown(element) {
-                                let text = "";
-                                for (const child of element.childNodes) {
-                                    if (child.nodeType === Node.TEXT_NODE) {
-                                        const val = child.nodeValue.replace(/\s+/g, ' ');
-                                        text += val;
-                                    } else if (child.nodeType === Node.ELEMENT_NODE) {
-                                        const tag = child.tagName.toLowerCase();
-                                        const style = window.getComputedStyle ? window.getComputedStyle(child) : null;
-                                        if (style && (style.display === 'none' || style.visibility === 'hidden')) {
-                                            continue;
-                                        }
-
-                                        if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
-                                            const lvl = parseInt(tag[1]);
-                                            text += '\n\n' + '#'.repeat(lvl) + ' ' + child.innerText.trim() + '\n\n';
-                                        } else if (tag === 'p') {
-                                            text += '\n\n' + elementToMarkdown(child).trim() + '\n\n';
-                                        } else if (tag === 'br') {
-                                            text += '\n';
-                                        } else if (['ul', 'ol'].includes(tag)) {
-                                            text += '\n' + elementToMarkdown(child) + '\n';
-                                        } else if (tag === 'li') {
-                                            text += '\n- ' + elementToMarkdown(child).trim();
-                                        } else if (tag === 'a') {
-                                            const href = child.getAttribute('href');
-                                            const linkText = elementToMarkdown(child).trim();
-                                            if (href && linkText) {
-                                                text += ` [${linkText}](${href}) `;
-                                            } else {
-                                                text += linkText;
-                                            }
-                                        } else if (['strong', 'b'].includes(tag)) {
-                                            text += ' **' + elementToMarkdown(child).trim() + '** ';
-                                        } else if (['em', 'i'].includes(tag)) {
-                                            text += ' *' + elementToMarkdown(child).trim() + '* ';
-                                        } else if (tag === 'code') {
-                                            text += ' `' + child.innerText + '` ';
-                                        } else if (tag === 'pre') {
-                                            text += '\n```\n' + child.innerText + '\n```\n';
-                                        } else if (tag === 'table') {
-                                            text += '\n\n[Table content omitted]\n\n';
-                                        } else {
-                                            text += elementToMarkdown(child);
-                                        }
-                                    }
-                                }
-                                return text;
+                            function isHidden(el) {
+                                if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+                                if (el.getAttribute('aria-hidden') === 'true') return true;
+                                const style = window.getComputedStyle ? window.getComputedStyle(el) : null;
+                                if (style && (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0')) return true;
+                                return false;
                             }
 
-                            const rawMarkdown = elementToMarkdown(clone);
-                            return rawMarkdown
-                                .replace(/[ \t]+/g, ' ')
-                                .replace(/\n{3,}/g, '\n\n')
-                                .trim();
+                            function isNoise(el) {
+                                if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+                                for (const s of noiseSelectors) {
+                                    if (el.matches && el.matches(s)) return true;
+                                }
+                                return false;
+                            }
+
+                            function nodeToMarkdown(node) {
+                                if (!node) return "";
+                                if (node.nodeType === Node.TEXT_NODE) {
+                                    return node.nodeValue.replace(/\s+/g, ' ');
+                                }
+                                if (node.nodeType !== Node.ELEMENT_NODE) return "";
+                                if (isHidden(node) || isNoise(node)) return "";
+
+                                const tag = node.tagName.toLowerCase();
+
+                                if (['h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag)) {
+                                    const lvl = parseInt(tag[1]);
+                                    return '\n\n' + '#'.repeat(lvl) + ' ' + (node.innerText || node.textContent).trim() + '\n\n';
+                                }
+                                if (tag === 'p') {
+                                    let inner = "";
+                                    for (const child of node.childNodes) inner += nodeToMarkdown(child);
+                                    return '\n\n' + inner.trim() + '\n\n';
+                                }
+                                if (tag === 'br') return '\n';
+                                if (['ul', 'ol'].includes(tag)) {
+                                    let inner = "";
+                                    for (const child of node.childNodes) inner += nodeToMarkdown(child);
+                                    return '\n' + inner + '\n';
+                                }
+                                if (tag === 'li') {
+                                    let inner = "";
+                                    for (const child of node.childNodes) inner += nodeToMarkdown(child);
+                                    return '\n- ' + inner.trim();
+                                }
+                                if (tag === 'a') {
+                                    const href = node.getAttribute('href');
+                                    let inner = "";
+                                    for (const child of node.childNodes) inner += nodeToMarkdown(child);
+                                    inner = inner.trim();
+                                    return (href && inner) ? (' [' + inner + '](' + href + ') ') : inner;
+                                }
+                                if (['strong', 'b'].includes(tag)) {
+                                    let inner = "";
+                                    for (const child of node.childNodes) inner += nodeToMarkdown(child);
+                                    return ' **' + inner.trim() + '** ';
+                                }
+                                if (['em', 'i'].includes(tag)) {
+                                    let inner = "";
+                                    for (const child of node.childNodes) inner += nodeToMarkdown(child);
+                                    return ' *' + inner.trim() + '* ';
+                                }
+                                if (tag === 'code') {
+                                    return ' `' + (node.innerText || node.textContent).trim() + '` ';
+                                }
+                                if (tag === 'pre') {
+                                    return '\n```\n' + (node.innerText || node.textContent).trim() + '\n```\n';
+                                }
+                                if (tag === 'table') {
+                                    const rows = Array.from(node.querySelectorAll('tr')).map(r => 
+                                        Array.from(r.querySelectorAll('th, td')).map(c => (c.innerText || c.textContent).trim()).join(' | ')
+                                    ).filter(r => r.length > 0);
+                                    return rows.length > 0 ? ('\n\n| ' + rows.join(' |\n| ') + ' |\n\n') : '';
+                                }
+
+                                const isBlock = ['div', 'section', 'article', 'main', 'aside'].includes(tag) || tag.includes('-');
+                                let childrenText = "";
+                                if (node.shadowRoot) {
+                                    for (const child of node.shadowRoot.childNodes) childrenText += nodeToMarkdown(child);
+                                }
+                                for (const child of node.childNodes) {
+                                    childrenText += nodeToMarkdown(child);
+                                }
+
+                                if (isBlock && childrenText.trim().length > 0) {
+                                    return '\n' + childrenText + '\n';
+                                }
+                                return childrenText;
+                            }
+
+                            const raw = nodeToMarkdown(root);
+                            return raw.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
                         }""", selector)
 
                         content = markdown if markdown else "No readable text content found."
