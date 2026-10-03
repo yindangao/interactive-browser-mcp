@@ -86,13 +86,14 @@ DEFAULT_TIMEOUT_MS: int = 10000
 DEFAULT_AUTH_TIMEOUT_S: int = 900
 DEFAULT_PAGE_LOAD_TIMEOUT_MS: int = 45000
 
-# Authentication domains triggering MFA/SSO intercept
-AUTH_DOMAINS: Tuple[str, ...] = (
-    "pfedprod.wal-mart.com",
+# Authentication domains triggering MFA/SSO intercept (extend via MCP_AUTH_DOMAINS env var)
+DEFAULT_AUTH_DOMAINS: Tuple[str, ...] = (
     "login.microsoftonline.com",
-    "login.wal-mart.com",
-    "identity.wal-mart.com",
-    "auth.wal-mart.com",
     "pingfederate",
     "okta",
+    "auth0",
 )
+_extra_domains: Tuple[str, ...] = tuple(
+    d.strip() for d in os.environ.get("MCP_AUTH_DOMAINS", "").split(",") if d.strip()
+)
+AUTH_DOMAINS: Tuple[str, ...] = DEFAULT_AUTH_DOMAINS + _extra_domains

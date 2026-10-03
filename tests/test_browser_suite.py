@@ -35,7 +35,7 @@ async def run_tests():
     print("=" * 60)
     session = BrowserSession()
     # Test starting session (will launch Chromium using .data/chrome_profile if CDP not active)
-    active = await session.start(url="https://one.walmart.com/content/uswire/en_us/company/byod/salary-walmart-enrollment-guides/ho-ios.html")
+    active = await session.start(url="https://example.com")
     print(f"Session started: {active}")
     assert active, "Failed to connect to browser session"
 

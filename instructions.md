@@ -89,7 +89,7 @@ If `selector` is omitted, `scroll_page` automatically searches for the primary n
 
 ### Pattern E: Multi-Tab Investigation and Isolation
 When you need to investigate a link or documentation without losing your current form or working state:
-1. **Open New Tab**: `tab_new(url="https://one.walmart.com/...")`
+1. **Open New Tab**: `tab_new(url="https://internal.portal.com/...")`
 2. **Inspect Open Tabs**: `tab_list()` to verify open tabs and their indices.
 3. **Switch Between Contexts**: `tab_switch(index=1)`
 4. **Clean Up Disposable Tabs**: `tab_close(index=1)` when research is complete to conserve system resources.
@@ -97,13 +97,13 @@ When you need to investigate a link or documentation without losing your current
 ### Pattern F: Session Verification & Human-in-the-Loop Authentication
 1. **Check Session Health**: Call `session_status()` to inspect active URL, page title, and authentication state.
 2. **Escalate to User for MFA**: If a corporate portal redirects to PingFederate, Okta, or a 2FA prompt:
-   - Call `authenticate(url="https://login.walmart.com/...")` to ensure the window is visible.
+   - Call `authenticate(url="https://login.company.com/...")` to ensure the window is visible.
    - Prompt the user directly to complete their hardware key, push notification, or biometric verification.
    - The tool waits until the login redirect succeeds and automatically serializes the updated session tokens.
 
 ### Pattern G: Visual Inspection & Media Capture
 Use `take_screenshot` when visual verification is essential:
-- Capturing enrollment QR codes (e.g., BYOD enrollment setup on mobile).
+- Capturing enrollment QR codes or 2FA setup screens.
 - Verifying data visualizations, charts, or complex layouts that cannot be represented in plain text.
 - Inspecting rendered DOM state when selectors are ambiguous.
 ```json

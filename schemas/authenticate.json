@@ -6,7 +6,7 @@
     "properties": {
       "url": {
         "type": "string",
-        "description": "Optional target enterprise URL to navigate to for login (e.g. 'https://jira.walmart.com')."
+        "description": "Optional target enterprise URL to navigate to for login (e.g. 'https://jira.company.com')."
       },
       "timeout_seconds": {
         "type": "integer",
