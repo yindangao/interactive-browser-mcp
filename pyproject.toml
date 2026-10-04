@@ -9,12 +9,12 @@ description = "Lean 12-tool persistent browser automation MCP server with CDP se
 authors = [{ name = "Squiggly Team" }]
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.0.0,<2.0.0",
     "playwright>=1.40.0",
 ]
 
 [project.scripts]
-interactive-browser-mcp = "browser_mcp.server:main"
+interactive-browser-mcp = "browser_mcp.server:cli"
 
 [tool.setuptools.packages.find]
 include = ["browser_mcp*"]

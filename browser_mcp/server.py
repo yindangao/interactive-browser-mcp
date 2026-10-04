@@ -56,5 +56,13 @@ async def main():
         await session_instance.close()
 
 
-if __name__ == "__main__":
+__all__ = ["server", "session_instance", "handle_list_tools", "handle_call_tool", "main", "cli"]
+
+
+def cli():
+    """Synchronous CLI entry point for console scripts."""
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    cli()
