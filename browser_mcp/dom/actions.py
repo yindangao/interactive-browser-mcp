@@ -19,53 +19,85 @@ class DOMActions:
     async def highlight_element(page: Page, selector: str) -> None:
         """Briefly pulse an amber outline on the target element before interaction."""
         try:
-            await page.evaluate(r"""(sel) => {
-                let el = document.querySelector(sel);
-                if (!el && sel.startsWith('text=')) {
-                    const text = sel.slice(5).replace(/^["']|["']$/g, '');
-                    const all = Array.from(document.querySelectorAll('button, a, input, div, span'));
-                    el = all.find(e => e.innerText && e.innerText.trim() === text);
-                }
-                if (el) {
+            loc = page.locator(selector).first
+            if await loc.count() > 0:
+                await loc.evaluate(r"""(el) => {
                     const originalBorder = el.style.border;
                     el.style.border = '3px solid #ff9900';
                     setTimeout(() => {
                         try { el.style.border = originalBorder; } catch(e){}
                     }, 800);
-                }
-            }""", selector)
+                }""")
         except Exception:
             pass
 
     @classmethod
     async def click(cls, page: Page, selector: str, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> Dict[str, Any]:
-        """Click an element, falling back from CSS selector to text locator if needed."""
+        """Click an element, supporting accessibility roles, visible filtering, and fallback dispatch."""
         if not page:
             return {"success": False, "error": "No active page available."}
 
-        try:
-            resolved_sel = selector
-            await cls.highlight_element(page, resolved_sel)
-            try:
-                await page.click(resolved_sel, timeout=timeout_ms)
-            except Exception as direct_err:
-                # If direct click fails and selector doesn't look like standard CSS, fallback to text locator
-                if not any(char in selector for char in ['#', '.', '[', '>', ':', '=']):
-                    text_sel = f'text="{selector}"'
-                    await cls.highlight_element(page, text_sel)
-                    await page.click(text_sel, timeout=timeout_ms)
-                    resolved_sel = text_sel
-                else:
-                    raise direct_err
+        candidates = []
+        is_plain_text = not any(char in selector for char in ['#', '.', '[', '>', ':', '='])
 
+        if selector.startswith("role="):
+            candidates.append(f"{selector} >> visible=true")
+            candidates.append(selector)
+        elif is_plain_text:
+            candidates.append(f'text="{selector}" >> visible=true')
+            candidates.append(f'text="{selector}"')
+            candidates.append(selector)
+        else:
+            candidates.append(selector)
+            candidates.append(f"{selector} >> visible=true")
+
+        last_error = None
+        for cand in candidates:
+            try:
+                loc = page.locator(cand).first
+                if await loc.count() > 0:
+                    await cls.highlight_element(page, cand)
+                    try:
+                        await loc.click(timeout=min(timeout_ms, 5000))
+                        return {
+                            "success": True,
+                            "selector": cand,
+                            "method": "pointer",
+                            "timestamp": datetime.now().isoformat(),
+                        }
+                    except Exception as click_err:
+                        logger.info("Pointer click failed on '%s' (%s), trying JS click / container bubble...", cand, click_err)
+                        js_clicked = await loc.evaluate(r"""(el) => {
+                            const parent = el.closest('button, a, tr, [role="button"], [role="row"], [role="checkbox"], [tabindex]');
+                            const target = parent || el;
+                            target.dispatchEvent(new MouseEvent('mousedown', {bubbles: true, cancelable: true, view: window}));
+                            target.dispatchEvent(new MouseEvent('mouseup', {bubbles: true, cancelable: true, view: window}));
+                            target.click();
+                            return true;
+                        }""")
+                        if js_clicked:
+                            return {
+                                "success": True,
+                                "selector": cand,
+                                "method": "js_dispatch",
+                                "timestamp": datetime.now().isoformat(),
+                            }
+            except Exception as cand_err:
+                last_error = cand_err
+                continue
+
+        try:
+            await page.click(selector, timeout=timeout_ms)
             return {
                 "success": True,
-                "selector": resolved_sel,
+                "selector": selector,
+                "method": "direct",
                 "timestamp": datetime.now().isoformat(),
             }
-        except Exception as error:
-            logger.error("Click error on selector '%s': %s", selector, error)
-            return {"success": False, "error": f"Failed to click element: {error}"}
+        except Exception as final_err:
+            error_to_report = last_error or final_err
+            logger.error("Click error on selector '%s': %s", selector, error_to_report)
+            return {"success": False, "error": f"Failed to click element: {error_to_report}"}
 
     @classmethod
     async def fill(

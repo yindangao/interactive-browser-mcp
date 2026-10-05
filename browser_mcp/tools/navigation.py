@@ -12,7 +12,7 @@ NAVIGATION_TOOLS: List[Tool] = [
             "Extract clean, noise-pruned content from a web page in Markdown format. "
             "If 'url' is provided, navigates to it; if omitted, inspects the current active tab. "
             "Supports 'wait_for_selector' to wait for dynamic elements in single-page apps (Jira, Confluence, Gemini) "
-            "before reading, 'selector' to scope extraction, and 'mode' ('content', 'outline', 'links')."
+            "before reading, 'selector' to scope extraction, and 'mode' ('content', 'outline', 'links', 'accessibility')."
         ),
         inputSchema={
             "type": "object",
@@ -42,9 +42,9 @@ NAVIGATION_TOOLS: List[Tool] = [
                 },
                 "mode": {
                     "type": "string",
-                    "enum": ["content", "outline", "links"],
+                    "enum": ["content", "outline", "links", "accessibility"],
                     "default": "content",
-                    "description": "Extraction mode: 'content' for clean markdown text, 'outline' for heading hierarchy, 'links' for link list."
+                    "description": "Extraction mode: 'content' for clean markdown text, 'outline' for heading hierarchy, 'links' for link list, 'accessibility' for ARIA accessibility tree outline."
                 },
                 "max_length": {
                     "type": "integer",

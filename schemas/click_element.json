@@ -1,12 +1,12 @@
 {
   "name": "click_element",
-  "description": "Click an interactive element (button, link, tab, accordion) on the active page. Supports standard CSS selectors (e.g. '#submit-btn', '.tab-ios') or plain text matching (e.g. 'Android', 'Submit'). Automatically scrolls element into view and highlights with a brief visual outline.",
+  "description": "Click an interactive element (button, link, tab, row, checkbox) on the active page. Supports standard CSS selectors, ARIA role selectors (e.g. 'role=button[name=\"Archive\"]'), or plain text matching (e.g. 'Atmos Energy', 'Submit'). Automatically filters for visible elements and falls back to container bubbling / JS dispatch.",
   "parameters": {
     "type": "object",
     "properties": {
       "selector": {
         "type": "string",
-        "description": "CSS selector or plain text of the element to click (e.g. '#submit-button', 'text=\"Android\"', or 'iOS')."
+        "description": "CSS selector, ARIA role selector ('role=button[name=\"...\"]'), or plain text of the element to click."
       },
       "timeout_ms": {
         "type": "integer",

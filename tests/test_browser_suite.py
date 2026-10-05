@@ -60,15 +60,27 @@ async def run_tests():
     print(content_res.get("content", "")[:400] + "...")
     assert content_res["success"], f"Content mode failed: {content_res}"
     assert "Personalize Snapshots" not in content_res.get("content", ""), "Mega-menu noise was not stripped!"
-    print("TEST 2C PASSED: Content mode successfully stripped mega-menus and noise!")
+    # Test Accessibility Mode (ARIA tree snapshot)
+    ax_res = await DOMReader.browse(session.page, mode="accessibility")
+    print(f"\n[Accessibility Mode Result (sample)]:")
+    print("\n".join(ax_res.get("content", "").splitlines()[:10]))
+    assert ax_res["success"], f"Accessibility mode failed: {ax_res}"
+    assert "paragraph:" in ax_res.get("content", "") or "link" in ax_res.get("content", "")
+    print("TEST 2D PASSED: Accessibility mode extracted clean ARIA tree snapshot.")
 
     print("\n" + "=" * 60)
-    print("TEST 3: Testing DOMActions.scroll")
+    print("TEST 3: Testing DOMActions.scroll and DOMActions.click")
     print("=" * 60)
     scroll_res = await DOMActions.scroll(session.page, direction="down", amount=300)
     print(f"Scroll result: {scroll_res}")
     assert scroll_res["success"], f"scroll failed: {scroll_res}"
-    print("TEST 3 PASSED: DOMActions.scroll executed successfully.\n")
+    print("TEST 3A PASSED: DOMActions.scroll executed successfully.")
+
+    # Test smart click with plain text matching
+    click_res = await DOMActions.click(session.page, selector="Learn more")
+    print(f"Click result: {click_res}")
+    assert click_res["success"], f"click failed: {click_res}"
+    print("TEST 3B PASSED: DOMActions.click executed successfully with text matching.\n")
 
     print("=" * 60)
     print("TEST 4: Testing handle_call_tool via MCP dispatcher")

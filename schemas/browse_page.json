@@ -33,12 +33,13 @@
       },
       "mode": {
         "type": "string",
-        "description": "Extraction mode: 'content' (default, clean article markdown), 'outline' (headings H1-H6 hierarchy), or 'links' (markdown link directory).",
+        "description": "Extraction mode: 'content' (default, clean article markdown), 'outline' (headings H1-H6 hierarchy), 'links' (markdown link directory), or 'accessibility' (ARIA accessibility tree snapshot).",
         "default": "content",
         "enum": [
           "content",
           "outline",
-          "links"
+          "links",
+          "accessibility"
         ]
       },
       "max_length": {

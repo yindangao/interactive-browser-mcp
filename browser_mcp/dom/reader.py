@@ -79,6 +79,18 @@ class DOMReader:
                         link_lines = [f"- [{l['text']}]({l['href']})" for l in links]
                         content = "\n".join(link_lines) if link_lines else "No links found."
 
+                    elif mode == "accessibility":
+                        try:
+                            if selector:
+                                content = await page.locator(selector).aria_snapshot()
+                            else:
+                                content = await page.aria_snapshot()
+                            if not content or not content.strip():
+                                content = "Empty accessibility tree."
+                        except Exception as ax_err:
+                            logger.warning("aria_snapshot error: %s", ax_err)
+                            content = f"Failed to capture accessibility snapshot: {ax_err}"
+
                     else:
                         # mode == "content": Clean DOM reading with custom Web Component & Shadow DOM support
                         markdown = await page.evaluate(r"""(sel) => {
