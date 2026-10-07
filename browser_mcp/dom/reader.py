@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from playwright.async_api import Page
 
+from browser_mcp.core.utils import is_internal_url, safe_get_title, safe_evaluate
+
 logger = logging.getLogger("browser_mcp.dom.reader")
 
 
@@ -31,20 +33,32 @@ class DOMReader:
             if url and url != page.url:
                 await page.goto(url, wait_until=wait_until, timeout=45000)
 
+            current_url = getattr(page, "url", "") or ""
+            if is_internal_url(current_url) or not current_url:
+                title = await safe_get_title(page)
+                return {
+                    "success": True,
+                    "url": current_url,
+                    "title": title,
+                    "mode": mode,
+                    "selector": selector,
+                    "content": f"Browser internal page: {current_url or 'about:blank'}. No DOM content to extract.",
+                    "timestamp": datetime.now().isoformat(),
+                }
+
             if wait_for_selector:
                 try:
                     await page.wait_for_selector(wait_for_selector, timeout=wait_for_timeout_ms)
                 except Exception as wait_err:
                     logger.warning("wait_for_selector '%s' timed out after %sms: %s", wait_for_selector, wait_for_timeout_ms, wait_err)
 
-            title = await page.title()
-            current_url = page.url
+            title = await safe_get_title(page)
             content = ""
 
             for attempt in range(2):
                 try:
                     if mode == "outline":
-                        headings = await page.evaluate(r"""() => {
+                        headings = await safe_evaluate(page, r"""() => {
                             const nodes = Array.from(document.querySelectorAll('h1, h2, h3, h4, h5, h6'));
                             return nodes
                                 .filter(n => n.innerText && n.innerText.trim().length > 0 && n.offsetParent !== null)
@@ -60,7 +74,7 @@ class DOMReader:
                         content = "\n".join(outline_lines) if outline_lines else "No visible headings found."
 
                     elif mode == "links":
-                        links = await page.evaluate(r"""(sel) => {
+                        links = await safe_evaluate(page, r"""(sel) => {
                             const root = sel ? document.querySelector(sel) : document.body;
                             if (!root) return [];
                             const anchors = Array.from(root.querySelectorAll('a[href]'));
@@ -75,16 +89,16 @@ class DOMReader:
                                 }
                             }
                             return results;
-                        }""", selector)
+                        }""", arg=selector, timeout=15.0)
                         link_lines = [f"- [{l['text']}]({l['href']})" for l in links]
                         content = "\n".join(link_lines) if link_lines else "No links found."
 
                     elif mode == "accessibility":
                         try:
                             if selector:
-                                content = await page.locator(selector).aria_snapshot()
+                                content = await asyncio.wait_for(page.locator(selector).aria_snapshot(), timeout=10.0)
                             else:
-                                content = await page.aria_snapshot()
+                                content = await asyncio.wait_for(page.aria_snapshot(), timeout=10.0)
                             if not content or not content.strip():
                                 content = "Empty accessibility tree."
                         except Exception as ax_err:
@@ -93,7 +107,7 @@ class DOMReader:
 
                     else:
                         # mode == "content": Clean DOM reading with custom Web Component & Shadow DOM support
-                        markdown = await page.evaluate(r"""(sel) => {
+                        markdown = await safe_evaluate(page, r"""(sel) => {
                             const root = sel ? document.querySelector(sel) : (document.querySelector('main, article, [role="main"]') || document.body);
                             if (!root) return "";
 
@@ -200,7 +214,7 @@ class DOMReader:
 
                             const raw = nodeToMarkdown(root);
                             return raw.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-                        }""", selector)
+                        }""", arg=selector, timeout=30.0)
 
                         content = markdown if markdown else "No readable text content found."
                         if len(content) > max_length:
@@ -209,8 +223,8 @@ class DOMReader:
                                 + f"\n\n... [Content truncated at {max_length} characters. Use selector or outline mode to inspect specific sections.]"
                             )
 
-                    title = await page.title()
-                    current_url = page.url
+                    title = await safe_get_title(page)
+                    current_url = getattr(page, "url", "")
                     break
 
                 except Exception as eval_err:

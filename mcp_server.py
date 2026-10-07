@@ -1,4 +1,4 @@
-"""Backward-compatible entry point for interactive-browser-mcp."""
+"""Backward-compatible entry point for interactive-browser-mcp supporting both STDIO and HTTP."""
 
 import asyncio
 import sys
@@ -23,9 +23,21 @@ from browser_mcp.server import (
     handle_list_tools as list_tools,
     handle_call_tool as call_tool,
     main,
+    run_stdio,
+    run_http,
+    create_starlette_app,
 )
 
-__all__ = ["server", "session_manager", "list_tools", "call_tool", "main"]
+__all__ = [
+    "server",
+    "session_manager",
+    "list_tools",
+    "call_tool",
+    "main",
+    "run_stdio",
+    "run_http",
+    "create_starlette_app",
+]
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main(sys.argv[1:]))

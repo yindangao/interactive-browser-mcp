@@ -26,6 +26,7 @@ from browser_mcp.config import (
     resolve_chrome_executable,
 )
 from browser_mcp.core.auth import AuthManager
+from browser_mcp.core.utils import is_internal_url, safe_get_title, safe_bring_to_front
 
 logger = logging.getLogger("browser_mcp.core.session")
 
@@ -141,14 +142,19 @@ class BrowserSession:
     async def ensure_active(self) -> bool:
         """Verify the browser and active page are responsive; reconnect if needed."""
         try:
-            if self.page and not self.page.is_closed():
-                # Quick health check
-                _ = self.page.url
-                return True
+            if self.browser and self.browser.is_connected():
+                if self.page and not self.page.is_closed():
+                    _ = self.page.url
+                    return True
+                if self.context and self.context.pages:
+                    for p in reversed(self.context.pages):
+                        if not p.is_closed():
+                            self.page = p
+                            return True
         except Exception:
             pass
 
-        logger.info("Active page not responsive. Reconnecting browser session...")
+        logger.info("Browser session not responsive or disconnected. Reconnecting...")
         return await self.start()
 
     async def list_tabs(self) -> Dict[str, Any]:
@@ -160,11 +166,11 @@ class BrowserSession:
         pages = self.context.pages if self.context else []
         for idx, p in enumerate(pages):
             try:
-                title = await asyncio.wait_for(p.title(), timeout=2.0)
+                title = await safe_get_title(p)
                 tabs.append({
                     "index": idx,
                     "title": title,
-                    "url": p.url,
+                    "url": getattr(p, "url", ""),
                     "is_active": (p == self.page),
                 })
             except Exception:
@@ -190,12 +196,13 @@ class BrowserSession:
         pages = self.context.pages if self.context else []
         if 0 <= index < len(pages):
             self.page = pages[index]
-            await self.page.bring_to_front()
+            await safe_bring_to_front(self.page)
+            title = await safe_get_title(self.page)
             return {
                 "success": True,
                 "message": f"Switched to tab {index}",
-                "title": await self.page.title(),
-                "url": self.page.url,
+                "title": title,
+                "url": getattr(self.page, "url", ""),
                 "timestamp": datetime.now().isoformat(),
             }
         return {"success": False, "error": f"Tab index {index} out of range (0-{len(pages) - 1})"}
@@ -210,12 +217,13 @@ class BrowserSession:
             self.page = new_p
             if url and url != "about:blank":
                 await self.page.goto(url, wait_until=wait_until, timeout=DEFAULT_PAGE_LOAD_TIMEOUT_MS)
+            title = await safe_get_title(self.page)
             return {
                 "success": True,
                 "message": "Opened new tab",
                 "tab_index": len(self.context.pages) - 1,
-                "url": self.page.url,
-                "title": await self.page.title(),
+                "url": getattr(self.page, "url", ""),
+                "title": title,
                 "timestamp": datetime.now().isoformat(),
             }
         except Exception as error:
@@ -232,12 +240,12 @@ class BrowserSession:
             return {"success": False, "error": f"Invalid tab index {index}"}
 
         try:
-            closed_url = target.url
+            closed_url = getattr(target, "url", "")
             await target.close()
-            remaining = self.context.pages
+            remaining = self.context.pages if self.context else []
             if remaining:
                 self.page = remaining[-1]
-                await self.page.bring_to_front()
+                await safe_bring_to_front(self.page)
             else:
                 self.page = None
 
@@ -267,7 +275,7 @@ class BrowserSession:
         if self.page and not self.page.is_closed():
             try:
                 status["active_url"] = self.page.url
-                status["active_title"] = await self.page.title()
+                status["active_title"] = await safe_get_title(self.page)
                 status["open_tabs"] = len(self.context.pages) if self.context else 0
                 status["authenticated_active"] = not self.auth_manager.is_auth_domain(status["active_url"])
             except Exception as e:
@@ -293,8 +301,8 @@ class BrowserSession:
         return {
             "success": auth_success,
             "authenticated": auth_success,
-            "current_url": self.page.url,
-            "title": await self.page.title(),
+            "current_url": getattr(self.page, "url", ""),
+            "title": await safe_get_title(self.page),
             "timestamp": datetime.now().isoformat(),
         }
 

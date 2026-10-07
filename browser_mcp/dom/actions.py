@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any
 from playwright.async_api import Page
 
 from browser_mcp.config import DEFAULT_TIMEOUT_MS, DEFAULT_SCREENSHOT_PATH
+from browser_mcp.core.utils import is_internal_url, safe_evaluate
 
 logger = logging.getLogger("browser_mcp.dom.actions")
 
@@ -19,15 +20,21 @@ class DOMActions:
     async def highlight_element(page: Page, selector: str) -> None:
         """Briefly pulse an amber outline on the target element before interaction."""
         try:
+            url = getattr(page, "url", "")
+            if is_internal_url(url):
+                return
             loc = page.locator(selector).first
             if await loc.count() > 0:
-                await loc.evaluate(r"""(el) => {
-                    const originalBorder = el.style.border;
-                    el.style.border = '3px solid #ff9900';
-                    setTimeout(() => {
-                        try { el.style.border = originalBorder; } catch(e){}
-                    }, 800);
-                }""")
+                await asyncio.wait_for(
+                    loc.evaluate(r"""(el) => {
+                        const originalBorder = el.style.border;
+                        el.style.border = '3px solid #ff9900';
+                        setTimeout(() => {
+                            try { el.style.border = originalBorder; } catch(e){}
+                        }, 800);
+                    }"""),
+                    timeout=2.0,
+                )
         except Exception:
             pass
 
@@ -36,6 +43,13 @@ class DOMActions:
         """Click an element, supporting accessibility roles, visible filtering, and fallback dispatch."""
         if not page:
             return {"success": False, "error": "No active page available."}
+
+        url = getattr(page, "url", "")
+        if is_internal_url(url):
+            return {
+                "success": False,
+                "error": f"Cannot click element on internal browser page ({url or 'about:blank'}). Switch to a valid web page first.",
+            }
 
         candidates = []
         is_plain_text = not any(char in selector for char in ['#', '.', '[', '>', ':', '='])
@@ -112,11 +126,21 @@ class DOMActions:
         if not page:
             return {"success": False, "error": "No active page available."}
 
+        url = getattr(page, "url", "")
+        if is_internal_url(url):
+            return {
+                "success": False,
+                "error": f"Cannot fill input on internal browser page ({url or 'about:blank'}). Switch to a valid web page first.",
+            }
+
         try:
             await cls.highlight_element(page, selector)
-            await page.fill(selector, text, timeout=timeout_ms)
+            await asyncio.wait_for(
+                page.fill(selector, text, timeout=timeout_ms),
+                timeout=(timeout_ms / 1000.0) + 2.0,
+            )
             if press_enter:
-                await page.keyboard.press("Enter")
+                await asyncio.wait_for(page.keyboard.press("Enter"), timeout=2.0)
 
             return {
                 "success": True,
@@ -140,6 +164,10 @@ class DOMActions:
         """Scroll active window or nested virtualized container (Teams, Jira, Slack)."""
         if not page:
             return {"success": False, "error": "No active page available."}
+
+        url = getattr(page, "url", "")
+        if is_internal_url(url):
+            return {"success": False, "error": f"Cannot scroll internal browser page ({url or 'about:blank'})."}
 
         try:
             js_script = r"""(arg) => {
@@ -172,11 +200,11 @@ class DOMActions:
                 return scrolledCount > 0 ? `scrolled_${scrolledCount}_containers` : 'scrolled_window';
             }"""
 
-            res = await page.evaluate(js_script, {
+            res = await safe_evaluate(page, js_script, arg={
                 "direction": direction,
                 "amount": amount,
                 "selector": selector,
-            })
+            }, timeout=10.0)
 
             if res == "selector_not_found":
                 return {"success": False, "error": f"Scroll target '{selector}' was not found in the DOM."}
@@ -194,18 +222,27 @@ class DOMActions:
             return {"success": False, "error": f"Failed to scroll page: {error}"}
 
     @classmethod
-    async def evaluate_js(cls, page: Page, script: str) -> Dict[str, Any]:
+    async def evaluate_js(cls, page: Page, script: str, timeout_seconds: float = 30.0) -> Dict[str, Any]:
         """Execute arbitrary JavaScript in active page context."""
         if not page:
             return {"success": False, "error": "No active page available."}
 
+        url = getattr(page, "url", "")
+        if is_internal_url(url):
+            return {
+                "success": False,
+                "error": f"Cannot evaluate JavaScript on internal browser page ({url or 'about:blank'}). Switch to a valid web page first.",
+            }
+
         try:
-            result = await page.evaluate(script)
+            result = await safe_evaluate(page, script, timeout=timeout_seconds)
             return {
                 "success": True,
                 "result": result,
                 "timestamp": datetime.now().isoformat(),
             }
+        except asyncio.TimeoutError:
+            return {"success": False, "error": f"evaluate_js timed out after {timeout_seconds}s"}
         except Exception as error:
             logger.error("evaluate_js error: %s", error)
             return {"success": False, "error": f"Failed to evaluate JS: {error}"}
@@ -219,11 +256,11 @@ class DOMActions:
         try:
             target_path = Path(output_path).resolve() if output_path else DEFAULT_SCREENSHOT_PATH
             target_path.parent.mkdir(parents=True, exist_ok=True)
-            await page.screenshot(path=str(target_path))
+            await asyncio.wait_for(page.screenshot(path=str(target_path)), timeout=15.0)
             return {
                 "success": True,
                 "path": str(target_path),
-                "url": page.url,
+                "url": getattr(page, "url", ""),
                 "timestamp": datetime.now().isoformat(),
             }
         except Exception as error:

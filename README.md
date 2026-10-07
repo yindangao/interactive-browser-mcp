@@ -107,7 +107,7 @@ personal_agent/interactive-browser-mcp/
 │
 ├── browser_mcp/              # Core Python package
 │   ├── config.py             # Chrome path resolution, profile paths, and environment defaults
-│   ├── server.py             # MCP server lifecycle and stdio transport
+│   ├── server.py             # MCP server lifecycle (dual STDIO and HTTP/SSE/Streamable transports)
 │   ├── core/
 │   │   ├── session.py        # Detached Chrome daemon lifecycle, CDP reconnect, tab routing
 │   │   └── auth.py           # SSO/MFA detection and cookie persistence
@@ -121,7 +121,8 @@ personal_agent/interactive-browser-mcp/
 │       └── script.py         # evaluate_js, take_screenshot
 │
 ├── tests/
-│   └── test_browser_suite.py # 5-phase test suite (schema, live session, DOM, actions, tools)
+│   ├── test_browser_suite.py # 5-phase test suite (schema, live session, DOM, actions, tools)
+│   └── test_transports.py    # Multi-transport verification (health, SSE, Streamable HTTP)
 └── .data/                    # Isolated runtime data (ignored in git)
     ├── chrome_profile/       # Persistent user profile (bookmarks, credentials, cookies)
     └── browser_session_state.json # Serialized session state metadata
@@ -147,15 +148,29 @@ playwright install chromium
 
 ### 2. Run the Verification Suite
 
-Run the automated 5-phase test suite to verify tool schema registration, daemon launching, CDP attachment, and DOM extraction:
+Run the test suites to verify tool schemas, live CDP sessions, and multi-transport capabilities:
 
 ```bash
+# 5-phase core browser suite (schema, live session, DOM, actions, tools)
 python tests/test_browser_suite.py
+
+# Multi-transport verification (health, SSE, Streamable HTTP)
+python tests/test_transports.py
 ```
 
-### 3. MCP Server Registration
+### 3. Server Execution & Transports
 
-Add the server entry to your client configuration (e.g., `mcp_config.json`, Claude Desktop, or Cursor):
+The server supports both **STDIO** (default, zero config) and **HTTP** (Streamable HTTP + SSE) transports.
+
+#### Option A: STDIO Transport (Default)
+
+Used by local clients (e.g. Antigravity, Claude Desktop, Cursor) running the Python script as a subprocess:
+
+```bash
+python mcp_server.py
+```
+
+Client configuration (`mcp_config.json`):
 
 ```json
 {
@@ -170,8 +185,48 @@ Add the server entry to your client configuration (e.g., `mcp_config.json`, Clau
 }
 ```
 
-Or start the server directly over stdio:
+#### Option B: HTTP Web Server (Streamable HTTP & SSE)
+
+Used by remote or web-first agents that connect via HTTP:
 
 ```bash
-python mcp_server.py
+# Start on default 127.0.0.1:8000
+python mcp_server.py --http
+
+# Or customize host, port, and log level
+python mcp_server.py --transport http --host 0.0.0.0 --port 8080 --log-level info
+```
+
+Environment variables are also supported:
+- `MCP_TRANSPORT=http`
+- `MCP_HOST=127.0.0.1`
+- `MCP_PORT=8000`
+- `LOG_LEVEL=info`
+
+**Available Endpoints**:
+- `POST /mcp` or `POST /`: MCP Streamable HTTP transport (modern JSON-RPC)
+- `GET /sse`: Server-Sent Events stream
+- `POST /messages`: SSE message channel
+- `GET /health` or `GET /status`: Server health, registered tool count, and active CDP status
+
+Client configuration for HTTP agents (`mcp_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "interactive-browser-mcp": {
+      "url": "http://127.0.0.1:8000/mcp"
+    }
+  }
+}
+```
+Or for SSE-based clients:
+```json
+{
+  "mcpServers": {
+    "interactive-browser-mcp": {
+      "url": "http://127.0.0.1:8000/sse"
+    }
+  }
+}
 ```
