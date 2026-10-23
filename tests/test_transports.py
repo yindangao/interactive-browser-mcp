@@ -21,7 +21,7 @@ from browser_mcp.server import create_starlette_app, ALL_TOOLS
 EXPECTED_TOOLS = {
     "browse_page", "evaluate_js", "session_status", "take_screenshot",
     "authenticate", "tab_list", "tab_switch", "tab_new", "tab_close",
-    "click_element", "fill_input", "scroll_page"
+    "click_element", "fill_input", "scroll_page", "browser_profile"
 }
 
 

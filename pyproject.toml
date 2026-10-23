@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "interactive-browser-mcp"
 version = "0.2.0"
-description = "Lean 12-tool persistent browser automation MCP server with CDP session management and enterprise SSO support"
+description = "Profile-aware 13-tool persistent browser automation MCP server with CDP session management and enterprise SSO support"
 authors = [{ name = "Squiggly Team" }]
 requires-python = ">=3.10"
 dependencies = [

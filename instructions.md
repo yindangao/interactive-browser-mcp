@@ -13,10 +13,13 @@ This MCP server provides a high-performance, human-and-agent shared browser envi
 
 ---
 
-## 2. The 12-Tool Topology
+## 2. The 13-Tool Topology
+
+All browser tools operate within the selected Chrome profile. Use `browser_profile(action="list")` to discover profiles, then `browser_profile(action="switch", profile="Work")` to select one by display name or directory. Switching reuses its existing window and last active tab and opens the profile only if it is not already open. Tab indices, authentication, page reads, interactions, JavaScript, and screenshots all target that selected profile. There is no window-creation tool.
 
 | Category | Tool | Best Used For |
 | :--- | :--- | :--- |
+| **Profile Routing** | `browser_profile` | List profiles (`action="list"`) or select one (`action="switch"`, `profile` required). |
 | **Session & Auth** | `session_status` | Check active tab, title, CDP health, and cookie state. |
 | | `authenticate` | Surface visible browser for manual SSO/MFA sign-in when redirected. |
 | **Tab Management** | `tab_list` | Inspect all open browser tabs with index and active status. |

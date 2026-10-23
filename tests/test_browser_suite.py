@@ -15,7 +15,7 @@ from browser_mcp.server import handle_list_tools, handle_call_tool
 
 async def run_tests():
     print("=" * 60)
-    print("TEST 1: Verifying list_tools schema registration (12 tools)")
+    print("TEST 1: Verifying list_tools schema registration (13 tools)")
     print("=" * 60)
     tools = await handle_list_tools()
     tool_names = [t.name for t in tools]
@@ -25,10 +25,10 @@ async def run_tests():
     expected_tools = {
         "browse_page", "evaluate_js", "session_status", "take_screenshot",
         "authenticate", "tab_list", "tab_switch", "tab_new", "tab_close",
-        "click_element", "fill_input", "scroll_page"
+        "click_element", "fill_input", "scroll_page", "browser_profile"
     }
     assert set(tool_names) == expected_tools, f"Mismatch in tools: {set(tool_names) ^ expected_tools}"
-    print("TEST 1 PASSED: All 12 tools successfully registered in modular package.\n")
+    print("TEST 1 PASSED: All 13 tools successfully registered in modular package.\n")
 
     print("=" * 60)
     print("TEST 2: Testing live browser session and DOMReader modes")

@@ -1,330 +1,345 @@
-"""Playwright browser lifecycle, persistent CDP socket management, and tab routing."""
-
+"""Detached Chrome lifecycle and native-profile-scoped tab routing."""
 import asyncio
 import logging
-import os
 import subprocess
+import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
-from playwright.async_api import (
-    async_playwright,
-    Playwright,
-    Browser,
-    BrowserContext,
-    Page,
-)
+from playwright.async_api import async_playwright
 
 from browser_mcp.config import (
-    CDP_PORT,
-    CDP_URL,
-    CHROME_PROFILE_DIR,
-    SESSION_STATE_FILE,
-    DEFAULT_PAGE_LOAD_TIMEOUT_MS,
-    DEFAULT_AUTH_TIMEOUT_S,
-    resolve_chrome_executable,
+    CDP_PORT, CHROME_PROFILE_DIR, SESSION_STATE_FILE,
+    DEFAULT_PAGE_LOAD_TIMEOUT_MS, DEFAULT_AUTH_TIMEOUT_S, resolve_chrome_executable,
 )
 from browser_mcp.core.auth import AuthManager
-from browser_mcp.core.utils import is_internal_url, safe_get_title, safe_bring_to_front
+from browser_mcp.core.profiles import (
+    available_profiles, resolve_profile, native_context, identify_profile, profile_popup,
+)
+from browser_mcp.core.utils import safe_get_title, safe_bring_to_front
 
-logger = logging.getLogger("browser_mcp.core.session")
+logger = logging.getLogger(__name__)
+
+
+def _launch_detached(command):
+    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               start_new_session=True)
+    # Reap singleton-forwarding launchers without waiting for the detached daemon.
+    threading.Thread(target=process.wait, daemon=True).start()
 
 
 class BrowserSession:
-    """Manages Playwright browser lifecycle, CDP connection, and tab state."""
+    """Playwright's CDP context flattens Chrome profiles; never route by that context alone."""
 
-    def __init__(
-        self,
-        cdp_port: int = CDP_PORT,
-        profile_dir: Optional[Path] = None,
-        state_file: Optional[Path] = None,
-    ):
+    def __init__(self, cdp_port: int = CDP_PORT, profile_dir: Optional[Path] = None,
+                 state_file: Optional[Path] = None):
         self.cdp_port = cdp_port
         self.cdp_url = f"http://127.0.0.1:{cdp_port}"
-        self.profile_dir = profile_dir or CHROME_PROFILE_DIR
-        self.state_file = state_file or SESSION_STATE_FILE
+        self.profile_dir = Path(profile_dir or CHROME_PROFILE_DIR)
+        self._base_state_file = Path(state_file or SESSION_STATE_FILE)
+        self.state_file = self._base_state_file
+        self.auth_manager = AuthManager(state_file=self.state_file)
+        self.playwright = self.browser = self.context = self.page = None
+        self.is_cdp_connection = False
+        self.selected_profile = None
+        self._context_profiles = {}
+        self._last_pages = {}
+
+    def _resolve_profile_directory(self, profile):
+        return resolve_profile(self.profile_dir, profile)
+
+    def _build_launch_command(self, executable_path, headless, profile_directory):
+        command = [executable_path, f"--remote-debugging-port={self.cdp_port}",
+                   f"--user-data-dir={self.profile_dir}",
+                   "--disable-blink-features=AutomationControlled", "--no-first-run",
+                   "--no-default-browser-check"]
+        if profile_directory:
+            command.append(f"--profile-directory={profile_directory}")
+        if headless:
+            command.append("--headless=new")
+        return command
+
+    def _select(self, directory, page):
+        self.selected_profile, self.page = directory, page
+        self._last_pages[directory] = page
+        base = self._base_state_file
+        self.state_file = base.with_name(f"{base.stem}.{directory}{base.suffix}")
         self.auth_manager = AuthManager(state_file=self.state_file)
 
-        self.playwright: Optional[Playwright] = None
-        self.browser: Optional[Browser] = None
-        self.context: Optional[BrowserContext] = None
-        self.page: Optional[Page] = None
-        self.is_cdp_connection: bool = False
-
-    async def start(self, url: Optional[str] = None, headless: bool = False) -> bool:
-        """Connect to an existing Google Chrome instance via CDP or launch a detached daemon."""
+    async def _connect(self, headless=False):
+        if self.browser and self.browser.is_connected():
+            return
+        self._context_profiles.clear()
+        if not self.playwright:
+            self.playwright = await async_playwright().start()
         try:
-            if not self.playwright:
-                self.playwright = await async_playwright().start()
-
-            # Attempt 1: Reconnect to running Chrome on remote debugging port
-            try:
-                logger.info("Attempting CDP connect on port %d...", self.cdp_port)
-                self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
-                self.is_cdp_connection = True
-
-                if self.browser.contexts:
-                    self.context = self.browser.contexts[0]
-                else:
-                    self.context = await self.browser.new_context()
-
-                if self.context.pages:
-                    self.page = self.context.pages[-1]
-                else:
-                    self.page = await self.context.new_page()
-
-                logger.info("Successfully connected to existing browser session via CDP")
-                if url:
-                    await self.page.goto(url, wait_until="domcontentloaded")
-                return True
-            except Exception as cdp_err:
-                logger.info("CDP connect failed (%s), launching detached browser daemon...", cdp_err)
-                self.is_cdp_connection = False
-
-            # Attempt 2: Launch detached browser daemon process automatically
-            executable_path = resolve_chrome_executable()
-            if not executable_path:
+            self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
+        except Exception:
+            executable = resolve_chrome_executable()
+            if not executable:
                 raise FileNotFoundError("Google Chrome or Chromium executable not found on host.")
-
             self.profile_dir.mkdir(parents=True, exist_ok=True)
-            cmd = [
-                executable_path,
-                f"--remote-debugging-port={self.cdp_port}",
-                f"--user-data-dir={self.profile_dir}",
-                "--disable-blink-features=AutomationControlled",
-                "--no-first-run",
-                "--no-default-browser-check",
-            ]
-            if headless:
-                cmd.append("--headless=new")
-
-            logger.info("Launching detached Chrome daemon (%s) on port %d with profile %s", executable_path, self.cdp_port, self.profile_dir)
-            subprocess.Popen(
-                cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-
-            # Wait and connect over CDP (up to 12 attempts = 6 seconds)
-            for attempt in range(12):
+            command = self._build_launch_command(executable, headless, self.selected_profile)
+            _launch_detached(command)
+            for _ in range(24):
+                await asyncio.sleep(.25)
                 try:
-                    await asyncio.sleep(0.5)
                     self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
-                    self.is_cdp_connection = True
                     break
                 except Exception:
                     pass
-
-            if not self.browser or not self.is_cdp_connection:
-                raise TimeoutError(f"Failed to connect to the detached browser on port {self.cdp_port}.")
-
-            if self.browser.contexts:
-                self.context = self.browser.contexts[0]
             else:
-                self.context = await self.browser.new_context()
+                raise TimeoutError(f"Failed to connect to Chrome on port {self.cdp_port}.")
+        self.is_cdp_connection = True
+        if not self.browser.contexts:
+            raise RuntimeError("Chrome has no native browser context.")
+        self.context = self.browser.contexts[0]
 
-            if self.context.pages:
-                self.page = self.context.pages[-1]
+    async def _discover(self):
+        """Try multiple anchors before declaring a native context unidentifiable."""
+        groups, unresolved = {}, {}
+        if not self.context:
+            return unresolved
+        for page in list(self.context.pages):
+            if not page.is_closed():
+                groups.setdefault(await native_context(page), []).append(page)
+        for context_id, anchors in groups.items():
+            if context_id in self._context_profiles:
+                continue
+            for anchor in reversed(anchors):
+                try:
+                    self._context_profiles[context_id] = await identify_profile(anchor, self.profile_dir)
+                    break
+                except Exception as error:
+                    unresolved[context_id] = str(error)
+            if context_id in self._context_profiles:
+                unresolved.pop(context_id, None)
+        return unresolved
+
+    async def _profile_pages(self, directory=None):
+        directory = directory or self.selected_profile
+        unresolved = await self._discover()
+        pages = []
+        for page in list(self.context.pages) if self.context else []:
+            if not page.is_closed() and self._context_profiles.get(await native_context(page)) == directory:
+                pages.append(page)
+        if not pages and unresolved:
+            raise RuntimeError("Cannot identify open Chrome profiles safely: " + "; ".join(unresolved.values()))
+        return pages
+
+    async def _open_profile(self, directory):
+        """Ask Chrome to open a closed profile, then verify the resulting page's profile path."""
+        executable = resolve_chrome_executable()
+        if not executable:
+            raise FileNotFoundError("Google Chrome or Chromium executable not found on host.")
+        command = self._build_launch_command(executable, False, directory) + ["--new-tab", "about:blank"]
+        _launch_detached(command)
+        # Managed Chrome may replace CLI URLs with its new-tab page. Identify by
+        # native context and a probe's actual profile path, never a marker URL.
+        for _ in range(80):
+            await asyncio.sleep(.1)
+            pages = await self._profile_pages(directory)
+            if pages:
+                return pages[-1]
+        raise TimeoutError(f"Chrome did not expose the new {directory!r} profile tab.")
+
+    async def _activate_profile(self, directory):
+        pages = await self._profile_pages(directory)
+        page = self._last_pages.get(directory)
+        if page not in pages:
+            page = pages[-1] if pages else await self._open_profile(directory)
+        self._select(directory, page)
+        await safe_bring_to_front(page)
+
+    async def start(self, url=None, headless=False):
+        try:
+            await self._connect(headless)
+            # Observe focus before probes temporarily activate their opener tabs.
+            focused = None
+            if not self.selected_profile:
+                for candidate in list(self.context.pages):
+                    try:
+                        if await asyncio.wait_for(candidate.evaluate("document.hasFocus()"), .5):
+                            focused = candidate
+                            break
+                    except Exception:
+                        pass
+            await self._discover()
+            if self.selected_profile:
+                await self._activate_profile(self.selected_profile)
             else:
-                self.page = await self.context.new_page()
-
-            logger.info("Successfully launched and connected to detached browser daemon via CDP!")
+                # A failed probe of the focused profile must not redirect the
+                # caller into an unrelated, successfully identified profile.
+                if focused is not None and await native_context(focused) not in self._context_profiles:
+                    raise RuntimeError("Cannot identify the focused Chrome profile safely.")
+                pages = [p for p in self.context.pages if not p.is_closed()
+                         and await native_context(p) in self._context_profiles]
+                if not pages:
+                    await self._activate_profile("Default")
+                else:
+                    page = focused if focused in pages else pages[-1]
+                    self._select(self._context_profiles[await native_context(page)], page)
             if url:
                 await self.page.goto(url, wait_until="domcontentloaded")
             return True
-
         except Exception as error:
             logger.error("Failed to start browser session: %s", error)
             return False
 
-    async def ensure_active(self) -> bool:
-        """Verify the browser and active page are responsive; reconnect if needed."""
+    async def browser_profile(self, action=None, profile=None):
+        if action not in ("list", "switch"):
+            return {"success": False, "error": "Action must be 'list' or 'switch'."}
+        if action == "list":
+            # Read disk even when detached; do not connect or launch as a side effect.
+            open_profiles = set()
+            connected = bool(self.browser and self.browser.is_connected())
+            if connected:
+                await self._discover()
+                for page in list(self.context.pages):
+                    if not page.is_closed():
+                        open_profiles.add(self._context_profiles.get(await native_context(page)))
+            return {"success": True, "selected_profile": self.selected_profile, "connected": connected,
+                    "profiles": [{"directory": d, "name": i.get("name", d),
+                                  "selected": d == self.selected_profile,
+                                  "is_open": d in open_profiles if connected else None}
+                                 for d, i in available_profiles(self.profile_dir).items()]}
+        old_profile, old_page = self.selected_profile, self.page
+        old_state_file, old_auth_manager = self.state_file, self.auth_manager
+        old_last_pages = self._last_pages.copy()
+        try:
+            directory = self._resolve_profile_directory(profile)
+            # If Chrome isn't running, launch the requested profile, not last-used.
+            self.selected_profile = directory
+            await self._connect()
+            await self._activate_profile(directory)
+            return {"success": True, "selected_profile": directory,
+                    "profile_directory": directory, "url": self.page.url,
+                    "open_tabs": len(await self._profile_pages())}
+        except BaseException as error:
+            # Roll back synchronously, including the existing AuthManager's
+            # in-memory state. Cancellation must not leave a half-switch behind.
+            self.selected_profile, self.page = old_profile, old_page
+            self.state_file, self.auth_manager = old_state_file, old_auth_manager
+            self._last_pages.clear()
+            self._last_pages.update(old_last_pages)
+            if not isinstance(error, Exception):
+                raise
+            return {"success": False, "error": str(error)}
+
+    async def ensure_active(self):
         try:
             if self.browser and self.browser.is_connected():
-                if self.page and not self.page.is_closed():
-                    _ = self.page.url
+                pages = await self._profile_pages()
+                if self.page in pages:
                     return True
-                if self.context and self.context.pages:
-                    for p in reversed(self.context.pages):
-                        if not p.is_closed():
-                            self.page = p
-                            return True
-        except Exception:
-            pass
-
-        logger.info("Browser session not responsive or disconnected. Reconnecting...")
+                if pages:
+                    self._select(self.selected_profile, pages[-1])
+                    return True
+                await self._activate_profile(self.selected_profile or "Default")
+                return True
+        except Exception as error:
+            # Fail closed on mapping errors, never fall back to another profile's page.
+            logger.warning("Cannot verify selected Chrome profile: %s", error)
+            return False
         return await self.start()
 
-    async def list_tabs(self) -> Dict[str, Any]:
-        """List all open tabs in the browser context."""
+    async def list_tabs(self):
+        if not await self.ensure_active():
+            return {"success": False, "error": "Browser is not running or profile cannot be verified."}
+        pages = await self._profile_pages()
+        return {"success": True, "selected_profile": self.selected_profile, "total_tabs": len(pages),
+                "tabs": [{"index": i, "title": await safe_get_title(p), "url": p.url,
+                          "is_active": p == self.page} for i, p in enumerate(pages)],
+                "timestamp": datetime.now().isoformat()}
+
+    async def switch_tab(self, index):
         if not await self.ensure_active():
             return {"success": False, "error": "Browser is not running."}
+        pages = await self._profile_pages()
+        if not isinstance(index, int) or not 0 <= index < len(pages):
+            return {"success": False, "error": f"Tab index {index} out of range (0-{len(pages)-1})"}
+        self._select(self.selected_profile, pages[index])
+        await safe_bring_to_front(self.page)
+        return {"success": True, "message": f"Switched to tab {index}",
+                "title": await safe_get_title(self.page), "url": self.page.url}
 
-        tabs: List[Dict[str, Any]] = []
-        pages = self.context.pages if self.context else []
-        for idx, p in enumerate(pages):
-            try:
-                title = await safe_get_title(p)
-                tabs.append({
-                    "index": idx,
-                    "title": title,
-                    "url": getattr(p, "url", ""),
-                    "is_active": (p == self.page),
-                })
-            except Exception:
-                tabs.append({
-                    "index": idx,
-                    "title": "<error reading tab>",
-                    "url": getattr(p, "url", "<unknown>"),
-                    "is_active": (p == self.page),
-                })
-
-        return {
-            "success": True,
-            "total_tabs": len(tabs),
-            "tabs": tabs,
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    async def switch_tab(self, index: int) -> Dict[str, Any]:
-        """Switch focus to the tab at index."""
+    async def new_tab(self, url="about:blank", wait_until="domcontentloaded"):
         if not await self.ensure_active():
             return {"success": False, "error": "Browser is not running."}
-
-        pages = self.context.pages if self.context else []
-        if 0 <= index < len(pages):
-            self.page = pages[index]
-            await safe_bring_to_front(self.page)
-            title = await safe_get_title(self.page)
-            return {
-                "success": True,
-                "message": f"Switched to tab {index}",
-                "title": title,
-                "url": getattr(self.page, "url", ""),
-                "timestamp": datetime.now().isoformat(),
-            }
-        return {"success": False, "error": f"Tab index {index} out of range (0-{len(pages) - 1})"}
-
-    async def new_tab(self, url: str = "about:blank", wait_until: str = "domcontentloaded") -> Dict[str, Any]:
-        """Open a new tab and navigate to url."""
-        if not await self.ensure_active():
-            return {"success": False, "error": "Browser is not running."}
-
         try:
-            new_p = await self.context.new_page()
-            self.page = new_p
+            page = await profile_popup(self.page)
+            self._select(self.selected_profile, page)
             if url and url != "about:blank":
-                await self.page.goto(url, wait_until=wait_until, timeout=DEFAULT_PAGE_LOAD_TIMEOUT_MS)
-            title = await safe_get_title(self.page)
-            return {
-                "success": True,
-                "message": "Opened new tab",
-                "tab_index": len(self.context.pages) - 1,
-                "url": getattr(self.page, "url", ""),
-                "title": title,
-                "timestamp": datetime.now().isoformat(),
-            }
+                await page.goto(url, wait_until=wait_until, timeout=DEFAULT_PAGE_LOAD_TIMEOUT_MS)
+            pages = await self._profile_pages()
+            return {"success": True, "message": "Opened new tab", "tab_index": pages.index(page),
+                    "url": page.url, "title": await safe_get_title(page)}
         except Exception as error:
             return {"success": False, "error": f"Failed to open new tab: {error}"}
 
-    async def close_tab(self, index: Optional[int] = None) -> Dict[str, Any]:
-        """Close specified tab (or active tab if index is None)."""
+    async def close_tab(self, index=None):
         if not await self.ensure_active():
             return {"success": False, "error": "Browser is not running."}
-
-        pages = self.context.pages if self.context else []
-        target = self.page if index is None else (pages[index] if 0 <= index < len(pages) else None)
-        if not target:
+        pages = await self._profile_pages()
+        target = self.page if index is None else (pages[index] if isinstance(index, int) and 0 <= index < len(pages) else None)
+        if target not in pages:
             return {"success": False, "error": f"Invalid tab index {index}"}
-
         try:
-            closed_url = getattr(target, "url", "")
+            url = target.url
             await target.close()
-            remaining = self.context.pages if self.context else []
-            if remaining:
-                self.page = remaining[-1]
-                await safe_bring_to_front(self.page)
-            else:
-                self.page = None
-
-            return {
-                "success": True,
-                "message": "Closed tab",
-                "closed_url": closed_url,
-                "remaining_tabs": len(remaining),
-                "timestamp": datetime.now().isoformat(),
-            }
+            remaining = await self._profile_pages()
+            if self.page == target:
+                self.page = remaining[-1] if remaining else None
+                self._last_pages[self.selected_profile] = self.page
+                if self.page:
+                    await safe_bring_to_front(self.page)
+            return {"success": True, "message": "Closed tab", "closed_url": url,
+                    "remaining_tabs": len(remaining)}
         except Exception as error:
             return {"success": False, "error": f"Failed to close tab: {error}"}
 
-    async def session_status(self) -> Dict[str, Any]:
-        """Inspect current browser state, CDP connectivity, and saved authentication tokens."""
-        status = {
-            "saved_session_exists": self.auth_manager.has_saved_session(),
-            "state_file": str(self.state_file),
-            "authenticated_active": False,
-            "active_url": None,
-            "active_title": None,
-            "open_tabs": 0,
-            "is_cdp_connection": self.is_cdp_connection,
-            "timestamp": datetime.now().isoformat(),
-        }
-
-        if self.page and not self.page.is_closed():
+    async def session_status(self):
+        status = {"saved_session_exists": self.auth_manager.has_saved_session(),
+                  "state_file": str(self.state_file), "authenticated_active": False,
+                  "active_url": None, "active_title": None, "open_tabs": 0,
+                  "selected_profile": self.selected_profile,
+                  "is_cdp_connection": self.is_cdp_connection,
+                  "timestamp": datetime.now().isoformat()}
+        if self.browser and self.browser.is_connected():
             try:
-                status["active_url"] = self.page.url
-                status["active_title"] = await safe_get_title(self.page)
-                status["open_tabs"] = len(self.context.pages) if self.context else 0
-                status["authenticated_active"] = not self.auth_manager.is_auth_domain(status["active_url"])
-            except Exception as e:
-                logger.debug("Error retrieving active page details: %s", e)
-
+                pages = await self._profile_pages()
+                status["open_tabs"] = len(pages)
+                if self.page in pages:
+                    status.update(active_url=self.page.url, active_title=await safe_get_title(self.page),
+                                  authenticated_active=not self.auth_manager.is_auth_domain(self.page.url))
+            except Exception as error:
+                status["error"] = str(error)
         return status
 
-    async def authenticate(self, url: Optional[str] = None, timeout_seconds: int = DEFAULT_AUTH_TIMEOUT_S) -> Dict[str, Any]:
-        """Surface visible browser window for manual SSO/MFA authentication."""
-        if not self.browser or self.is_cdp_connection:
-            started = await self.start(url=url, headless=False)
-            if not started:
-                return {"success": False, "error": "Failed to launch browser for authentication."}
-        elif url and self.page:
+    async def authenticate(self, url=None, timeout_seconds=DEFAULT_AUTH_TIMEOUT_S):
+        if not await self.ensure_active():
+            return {"success": False, "error": "Failed to launch browser for authentication."}
+        if url:
             await self.page.goto(url, wait_until="domcontentloaded")
+        await safe_bring_to_front(self.page)
+        success = await self.auth_manager.monitor_auth(self.page, self.context, timeout_seconds=timeout_seconds)
+        return {"success": success, "authenticated": success, "selected_profile": self.selected_profile,
+                "current_url": self.page.url, "title": await safe_get_title(self.page),
+                "timestamp": datetime.now().isoformat()}
 
-        if not self.page:
-            return {"success": False, "error": "No active page available."}
-
-        auth_success = await self.auth_manager.monitor_auth(
-            self.page, self.context, timeout_seconds=timeout_seconds
-        )
-        return {
-            "success": auth_success,
-            "authenticated": auth_success,
-            "current_url": getattr(self.page, "url", ""),
-            "title": await safe_get_title(self.page),
-            "timestamp": datetime.now().isoformat(),
-        }
-
-    async def close(self) -> None:
-        """Gracefully close browser and playwright instances."""
+    async def close(self):
+        """Stop our transport, leaving detached Chrome and all user windows alive."""
         try:
-            if self.context:
-                await self.auth_manager.save_storage_state(self.context)
-            if self.browser:
-                if self.is_cdp_connection:
-                    await self.browser.disconnect()
-                else:
-                    await self.browser.close()
-            elif self.context:
-                await self.context.close()
+            if self.context and self.page and not self.page.is_closed():
+                await self.auth_manager.save_storage_state(self.context, page=self.page)
+            if self.browser and not self.is_cdp_connection:
+                await self.browser.close()
             if self.playwright:
                 await self.playwright.stop()
         except Exception as error:
             logger.warning("Error during browser close: %s", error)
         finally:
-            self.browser = None
-            self.context = None
-            self.page = None
-            self.playwright = None
+            self.browser = self.context = self.page = self.playwright = None
             self.is_cdp_connection = False
+            self._context_profiles.clear()

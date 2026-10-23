@@ -1,0 +1,24 @@
+{
+  "name": "browser_profile",
+  "description": "List available Chrome profiles or switch the active profile, reusing its existing window and last active tab. Opens the profile only if it is not already open. All other browser tools target the selected profile.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "list",
+          "switch"
+        ],
+        "description": "List profiles or switch the active profile."
+      },
+      "profile": {
+        "type": "string",
+        "description": "Chrome profile display name or directory. Required when action is switch."
+      }
+    },
+    "required": [
+      "action"
+    ]
+  }
+}

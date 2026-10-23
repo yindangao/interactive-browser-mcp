@@ -6,6 +6,7 @@ Supports both:
 """
 
 import argparse
+import weakref
 import asyncio
 import contextlib
 import json
@@ -38,11 +39,21 @@ logger = logging.getLogger("browser_mcp.server")
 # Instantiate server and singleton browser session
 server = Server("interactive-browser-mcp")
 session_instance = BrowserSession()
+# Each event loop owns one lock. Keep the entire tool operation on one selected
+# profile, including long-running authentication; never switch underneath it.
+_tool_locks = weakref.WeakKeyDictionary()
+
+
+async def _dispatch_serialized(name: str, args: dict):
+    loop = asyncio.get_running_loop()
+    lock = _tool_locks.setdefault(loop, asyncio.Lock())
+    async with lock:
+        return await dispatch_tool(session_instance, name, args)
 
 
 @server.list_tools()
 async def handle_list_tools() -> List[Tool]:
-    """Expose the lean 12-tool suite."""
+    """Expose the browser tool suite."""
     return ALL_TOOLS
 
 
@@ -57,7 +68,7 @@ async def handle_call_tool(name: str, arguments: dict) -> List[TextContent]:
             timeout_limit = 60.0
 
         result = await asyncio.wait_for(
-            dispatch_tool(session_instance, name, args),
+            _dispatch_serialized(name, args),
             timeout=timeout_limit,
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
@@ -76,7 +87,7 @@ async def handle_call_tool(name: str, arguments: dict) -> List[TextContent]:
 
 async def run_stdio():
     """Run standard I/O MCP server."""
-    logger.info("Starting interactive-browser-mcp server over STDIO (12 tools registered)...")
+    logger.info("Starting interactive-browser-mcp server over STDIO (%d tools registered)...", len(ALL_TOOLS))
     try:
         async with stdio_server() as (read_stream, write_stream):
             await server.run(

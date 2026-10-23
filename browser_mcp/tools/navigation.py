@@ -71,6 +71,25 @@ NAVIGATION_TOOLS: List[Tool] = [
         }
     ),
     Tool(
+        name="browser_profile",
+        description="List available Chrome profiles or switch the active profile, reusing its existing window and last active tab. Opens the profile only if it is not already open. All other browser tools target the selected profile.",
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["list", "switch"],
+                    "description": "List profiles or switch the active profile."
+                },
+                "profile": {
+                    "type": "string",
+                    "description": "Chrome profile display name or directory. Required when action is switch."
+                }
+            },
+            "required": ["action"]
+        }
+    ),
+    Tool(
         name="tab_list",
         description="List all open tabs in the browser with index, title, URL, and active status.",
         inputSchema={"type": "object", "properties": {}}
@@ -136,6 +155,10 @@ async def handle_authenticate(session: BrowserSession, args: Dict[str, Any]) -> 
     )
 
 
+async def handle_browser_profile(session: BrowserSession, args: Dict[str, Any]) -> Dict[str, Any]:
+    return await session.browser_profile(action=args.get("action"), profile=args.get("profile"))
+
+
 async def handle_tab_list(session: BrowserSession, args: Dict[str, Any]) -> Dict[str, Any]:
     return await session.list_tabs()
 
@@ -159,6 +182,7 @@ NAVIGATION_HANDLERS = {
     "browse_page": handle_browse_page,
     "session_status": handle_session_status,
     "authenticate": handle_authenticate,
+    "browser_profile": handle_browser_profile,
     "tab_list": handle_tab_list,
     "tab_new": handle_tab_new,
     "tab_switch": handle_tab_switch,

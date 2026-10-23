@@ -55,7 +55,7 @@ Binding the browser process directly as a child of the Python runtime causes eve
 The relationship between the agent and the browser is that of an "inspector and assistant", not an "owner and conqueror". Communication must happen over a standard remote inspection protocol that permits clean attachment and detachment.
 
 **Key Benefits**:
-- **Non-Destructive Teardown**: When the MCP server closes or the agent finishes a turn, calling `browser.disconnect()` cleanly detaches the socket while leaving Chrome, its tabs, and its runtime memory untouched.
+- **Non-Destructive Teardown**: Stopping Playwright's transport cleanly detaches the socket without calling `browser.close()` on the detached Chrome daemon, leaving its tabs and runtime memory untouched.
 - **Concurrent Inspection**: Multiple automation tools, Python scripts, or Chrome DevTools windows can attach to the same running browser on port 9222 simultaneously without process contention.
 - **Standardized Foundation**: Tools interact through standard CDP primitives, decoupling the MCP server logic from Playwright's specific internal release cycle.
 
@@ -68,7 +68,7 @@ Playwright's high-level `launch_persistent_context()` API assumes exclusive proc
 
 - **Shared Collaborative Workspace**: Designed for human-and-agent co-browsing, balancing quiet background execution with visible interaction when needed.
 - **Detached Native Chrome Daemon**: Automatically resolves official enterprise Google Chrome, spawns an independent daemon on port 9222, and attaches via CDP so server restarts never close active tabs.
-- **Lean 12-Tool Architecture**: Modular, declarative design separating perception, interaction, tab management, and script execution.
+- **Lean 13-Tool Architecture**: Modular, declarative design separating perception, interaction, tab management, and script execution.
 - **Smart DOM Perception (`browse_page`)**: Automated DOM boilerplate pruning (headers, footers, mega-menus, modals) with outline and link discovery modes.
 - **API-First Automation (`evaluate_js`)**: Directly queries internal REST endpoints (Jira, Confluence, ServiceNow) via `window.fetch()` leveraging active SSO session cookies.
 - **SSO and MFA Persistence**: Performs interactive login once; persists session storage state (cookies, local storage) in `.data/` and maintains persistent corporate identity across runs.
@@ -77,6 +77,12 @@ Playwright's high-level `launch_persistent_context()` API assumes exclusive proc
 ---
 
 ## Tool Catalog
+
+The 13 tools share a selected Chrome profile. Use `browser_profile(action="list")` to discover profiles and `browser_profile(action="switch", profile="Work")` to select one by display name or directory (for example, `Profile 1`). Switching reuses the profile's existing window and last active tab; it opens the profile only if it is not already open. All other browser tools target the selected profile, including authentication, tab management, page reading, interactions, JavaScript, and screenshots. Tab indices are scoped to that profile. There is no window-creation tool.
+
+Native Chrome profiles share a flattened Playwright CDP context, so the server verifies each page's native profile ID rather than treating Playwright contexts as profiles. First discovery uses a temporary blank probe tab, reads `chrome://version`, then closes the probe without navigating existing tabs. This can briefly change focus. Popup-blocked or unresponsive pages fail closed rather than routing tools to another profile. Open status is known only while connected; profile selection and remembered active tabs are server-local, not persisted across an MCP process restart. A later tab operation can reopen the selected profile after its last tab is closed.
+
+Authentication snapshots use separate files per profile. Cookies are captured through the selected page's CDP session, not the shared context. The snapshot includes localStorage for the current web origin only; Chrome itself retains each profile's full persistent storage.
 
 | Category | Tool | Parameters | Description |
 | :--- | :--- | :--- | :--- |
@@ -92,6 +98,7 @@ Playwright's high-level `launch_persistent_context()` API assumes exclusive proc
 | | `tab_close` | `index?: int` | Closes a tab by index (or the currently active tab if omitted). |
 | **Session & Auth**| `session_status` | _none_ | Returns current browser health, CDP socket state, active URL, title, and saved tokens. |
 | | `authenticate` | `url?: str`, `timeout_seconds?: int` | Opens an interactive browser window for corporate SSO / MFA / PingFederate login, auto-saving session state upon redirect. |
+| **Profile Routing** | `browser_profile` | `action: "list" or "switch"`, `profile?: str` | Lists profiles or switches by display name or directory (`profile` required for `switch`), reusing the existing window and last active tab. Opens the profile only if it is not already open. |
 
 ---
 
@@ -116,12 +123,13 @@ personal_agent/interactive-browser-mcp/
 │   │   └── actions.py        # Click, fill, scroll, and screenshot actions
 │   └── tools/
 │       ├── __init__.py       # Declarative registry and dispatch router
-│       ├── navigation.py     # browse_page, tab_*, session_status, authenticate
+│       ├── navigation.py     # browse_page, tab_*, session_status, authenticate, browser_profile
 │       ├── interaction.py    # click_element, fill_input, scroll_page
 │       └── script.py         # evaluate_js, take_screenshot
 │
 ├── tests/
-│   ├── test_browser_suite.py # 5-phase test suite (schema, live session, DOM, actions, tools)
+│   ├── test_browser_suite.py # Browser tool schema, live session, DOM, and action coverage
+│   ├── test_profile_tool.py  # Profile tool schema, forwarding, and catalog contract tests
 │   └── test_transports.py    # Multi-transport verification (health, SSE, Streamable HTTP)
 └── .data/                    # Isolated runtime data (ignored in git)
     ├── chrome_profile/       # Persistent user profile (bookmarks, credentials, cookies)
@@ -151,6 +159,12 @@ playwright install chromium
 Run the test suites to verify tool schemas, live CDP sessions, and multi-transport capabilities:
 
 ```bash
+# Unit and contract tests, no live browser required
+.venv/bin/python -m unittest discover -s tests -p 'test_*.py' -v
+
+# Native profile routing, reuse, recovery, and cookie isolation in disposable Chrome
+MCP_PROFILE_LIVE_TEST=1 .venv/bin/python -m unittest discover -s tests -p test_native_profiles_live.py -v
+
 # 5-phase core browser suite (schema, live session, DOM, actions, tools)
 python tests/test_browser_suite.py
 
