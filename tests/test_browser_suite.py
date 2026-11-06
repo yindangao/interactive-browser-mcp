@@ -25,7 +25,7 @@ async def run_tests():
     expected_tools = {
         "browse_page", "evaluate_js", "session_status", "take_screenshot",
         "authenticate", "tab_list", "tab_switch", "tab_new", "tab_close",
-        "click_element", "fill_input", "scroll_page", "browser_profile"
+        "click_element", "fill_input", "scroll_page", "browser_launcher"
     }
     assert set(tool_names) == expected_tools, f"Mismatch in tools: {set(tool_names) ^ expected_tools}"
     print("TEST 1 PASSED: All 13 tools successfully registered in modular package.\n")

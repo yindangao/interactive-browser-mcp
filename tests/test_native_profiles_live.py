@@ -66,7 +66,7 @@ class NativeProfileLiveTests(unittest.IsolatedAsyncioTestCase):
                     except OSError:
                         await asyncio.sleep(.1)
                 self.assertTrue(await session.start())
-                initial = await session.browser_profile("switch", "Personal")
+                initial = await session.browser_launcher("open", "Personal")
                 self.assertTrue(initial["success"], initial)
                 personal = session.page
                 await personal.goto("data:text/html,<title>Personal</title>original")
@@ -85,7 +85,7 @@ class NativeProfileLiveTests(unittest.IsolatedAsyncioTestCase):
                         await browser_cdp.detach()
                 initial_windows = await windows()
                 originals = {page: page.url for page in session.context.pages}
-                result = await session.browser_profile("switch", "Work")
+                result = await session.browser_launcher("open", "Work")
                 self.assertTrue(result["success"], result)
                 work = session.page
                 self.assertEqual(len(await windows()), len(initial_windows) + 1)
@@ -102,12 +102,12 @@ class NativeProfileLiveTests(unittest.IsolatedAsyncioTestCase):
                                    "url": "https://native-profile-test.invalid/", "secure": True})
                     await cdp.detach()
                 for directory, anchor in [("Default", personal), ("Profile 1", work)]:
-                    result = await session.browser_profile("switch", directory)
+                    result = await session.browser_launcher("open", directory)
                     self.assertTrue(result["success"], result)
                     self.assertIs(session.page, anchor)
                     before = len(session.context.pages)
                     for _ in range(2):
-                        self.assertTrue((await session.browser_profile("switch", directory))["success"])
+                        self.assertTrue((await session.browser_launcher("open", directory))["success"])
                         self.assertIs(session.page, anchor)
                     self.assertEqual(len(session.context.pages), before)
                     self.assertEqual(await windows(), open_windows)
@@ -130,7 +130,7 @@ class NativeProfileLiveTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(await session.start())
                 self.assertEqual(session.selected_profile, "Profile 1")
                 self.assertEqual((await session.session_status())["open_tabs"], 1)
-                listed = await session.browser_profile("list")
+                listed = await session.browser_launcher("list_profiles")
                 self.assertTrue(all(p["is_open"] for p in listed["profiles"]))
                 self.assertEqual(set(session._context_profiles.values()), {"Default", "Profile 1"})
             finally:
@@ -149,7 +149,7 @@ class NativeProfileLiveTests(unittest.IsolatedAsyncioTestCase):
                                                   stderr=subprocess.DEVNULL, start_new_session=True))
             try:
                 with patch("browser_mcp.core.session._launch_detached", side_effect=launch):
-                    result = await session.browser_profile("switch", "Work")
+                    result = await session.browser_launcher("open", "Work")
                     self.assertTrue(result["success"], result)
                     self.assertEqual(len(processes), 1)
                     self.assertIn("--profile-directory=Profile 1", processes[0].args)

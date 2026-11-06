@@ -62,6 +62,10 @@ The relationship between the agent and the browser is that of an "inspector and 
 **Failure Mode Prevented**:
 Playwright's high-level `launch_persistent_context()` API assumes exclusive process ownership designed for automated test suites. It passes restrictive command-line flags, overrides default profiles, and terminates the entire browser process upon script exit. Restricting Playwright to `connect_over_cdp()` ensures non-destructive, persistent collaboration.
 
+Both initial attachment and reconnect use `no_defaults=True`. This leaves download handling with Chrome, including the profile's download folder and original filenames. It also preserves native focus and media settings. Playwright 1.64.1 or later is required for this attachment contract. Without this option, Playwright redirects downloads to temporary `playwright-artifacts-*` folders under generated filenames and can delete them on disconnect.
+
+This option does not reset overrides already applied by an older running server. After updating, restart the MCP server and Chrome when convenient, then test a new download. Existing temporary downloads are not moved or restored by this change. Do not restart Chrome while it has unsaved work.
+
 ---
 
 ## Highlights
@@ -78,7 +82,9 @@ Playwright's high-level `launch_persistent_context()` API assumes exclusive proc
 
 ## Tool Catalog
 
-The 13 tools share a selected Chrome profile. Use `browser_profile(action="list")` to discover profiles and `browser_profile(action="switch", profile="Work")` to select one by display name or directory (for example, `Profile 1`). Switching reuses the profile's existing window and last active tab; it opens the profile only if it is not already open. All other browser tools target the selected profile, including authentication, tab management, page reading, interactions, JavaScript, and screenshots. Tab indices are scoped to that profile. There is no window-creation tool.
+The 13 tools share a selected Chrome profile. Use `browser_launcher(action="list_profiles")` to discover profiles and `browser_launcher(action="open", profile="Work")` to select one by display name or directory (for example, `Profile 1`). Listing never starts Chrome. Opening starts Chrome if needed and reuses the profile's existing window and last active tab when available. It does not restart Chrome. All other browser tools target the selected profile, including authentication, tab management, page reading, interactions, JavaScript, and screenshots. Tab indices are scoped to that profile. There is no window-creation tool.
+
+The launcher replaces the former `browser_profile` tool. Update callers from `list` to `list_profiles` and from `switch` to `open`. Refresh the client tool catalog after loading the updated server. The catalog still contains 13 tools; the old tool name is not registered. `session_status` only inspects the session and does not launch Chrome.
 
 Native Chrome profiles share a flattened Playwright CDP context, so the server verifies each page's native profile ID rather than treating Playwright contexts as profiles. First discovery uses a temporary blank probe tab, reads `chrome://version`, then closes the probe without navigating existing tabs. This can briefly change focus. Popup-blocked or unresponsive pages fail closed rather than routing tools to another profile. Open status is known only while connected; profile selection and remembered active tabs are server-local, not persisted across an MCP process restart. A later tab operation can reopen the selected profile after its last tab is closed.
 
@@ -98,7 +104,7 @@ Authentication snapshots use separate files per profile. Cookies are captured th
 | | `tab_close` | `index?: int` | Closes a tab by index (or the currently active tab if omitted). |
 | **Session & Auth**| `session_status` | _none_ | Returns current browser health, CDP socket state, active URL, title, and saved tokens. |
 | | `authenticate` | `url?: str`, `timeout_seconds?: int` | Opens an interactive browser window for corporate SSO / MFA / PingFederate login, auto-saving session state upon redirect. |
-| **Profile Routing** | `browser_profile` | `action: "list" or "switch"`, `profile?: str` | Lists profiles or switches by display name or directory (`profile` required for `switch`), reusing the existing window and last active tab. Opens the profile only if it is not already open. |
+| **Browser Startup** | `browser_launcher` | `action: "list_profiles" or "open"`, `profile?: str` | Lists profiles without starting Chrome, or opens and selects a profile by display name or directory. `profile` is required for `open`. Reuses existing windows and the last active tab. |
 
 ---
 
@@ -123,7 +129,7 @@ personal_agent/interactive-browser-mcp/
 │   │   └── actions.py        # Click, fill, scroll, and screenshot actions
 │   └── tools/
 │       ├── __init__.py       # Declarative registry and dispatch router
-│       ├── navigation.py     # browse_page, tab_*, session_status, authenticate, browser_profile
+│       ├── navigation.py     # browse_page, tab_*, session_status, authenticate, browser_launcher
 │       ├── interaction.py    # click_element, fill_input, scroll_page
 │       └── script.py         # evaluate_js, take_screenshot
 │
@@ -164,6 +170,12 @@ Run the test suites to verify tool schemas, live CDP sessions, and multi-transpo
 
 # Native profile routing, reuse, recovery, and cookie isolation in disposable Chrome
 MCP_PROFILE_LIVE_TEST=1 .venv/bin/python -m unittest discover -s tests -p test_native_profiles_live.py -v
+
+# Launcher startup from the profile picker and repeated-open reuse in disposable Chrome
+MCP_LAUNCHER_LIVE_TEST=1 .venv/bin/python -m unittest discover -s tests -p test_browser_launcher_live.py -v
+
+# Native download filenames, folder, and persistence in disposable Chrome
+MCP_DOWNLOAD_LIVE_TEST=1 .venv/bin/python -m unittest discover -s tests -p test_native_downloads_live.py -v
 
 # 5-phase core browser suite (schema, live session, DOM, actions, tools)
 python tests/test_browser_suite.py

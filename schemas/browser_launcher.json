@@ -1,0 +1,24 @@
+{
+  "name": "browser_launcher",
+  "description": "List Chrome profiles without starting Chrome, or open and select a profile. Starts Chrome if needed; otherwise reuses the profile's existing window and last active tab. All other browser tools target the selected profile. Does not restart Chrome or create an extra window for an already-open profile.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "action": {
+        "type": "string",
+        "enum": [
+          "list_profiles",
+          "open"
+        ],
+        "description": "List profiles without starting Chrome, or open and select a profile."
+      },
+      "profile": {
+        "type": "string",
+        "description": "Chrome profile display name or directory. Required when action is open."
+      }
+    },
+    "required": [
+      "action"
+    ]
+  }
+}

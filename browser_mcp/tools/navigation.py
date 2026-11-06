@@ -71,19 +71,19 @@ NAVIGATION_TOOLS: List[Tool] = [
         }
     ),
     Tool(
-        name="browser_profile",
-        description="List available Chrome profiles or switch the active profile, reusing its existing window and last active tab. Opens the profile only if it is not already open. All other browser tools target the selected profile.",
+        name="browser_launcher",
+        description="List Chrome profiles without starting Chrome, or open and select a profile. Starts Chrome if needed; otherwise reuses the profile's existing window and last active tab. All other browser tools target the selected profile. Does not restart Chrome or create an extra window for an already-open profile.",
         inputSchema={
             "type": "object",
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["list", "switch"],
-                    "description": "List profiles or switch the active profile."
+                    "enum": ["list_profiles", "open"],
+                    "description": "List profiles without starting Chrome, or open and select a profile."
                 },
                 "profile": {
                     "type": "string",
-                    "description": "Chrome profile display name or directory. Required when action is switch."
+                    "description": "Chrome profile display name or directory. Required when action is open."
                 }
             },
             "required": ["action"]
@@ -155,8 +155,8 @@ async def handle_authenticate(session: BrowserSession, args: Dict[str, Any]) -> 
     )
 
 
-async def handle_browser_profile(session: BrowserSession, args: Dict[str, Any]) -> Dict[str, Any]:
-    return await session.browser_profile(action=args.get("action"), profile=args.get("profile"))
+async def handle_browser_launcher(session: BrowserSession, args: Dict[str, Any]) -> Dict[str, Any]:
+    return await session.browser_launcher(action=args.get("action"), profile=args.get("profile"))
 
 
 async def handle_tab_list(session: BrowserSession, args: Dict[str, Any]) -> Dict[str, Any]:
@@ -182,7 +182,7 @@ NAVIGATION_HANDLERS = {
     "browse_page": handle_browse_page,
     "session_status": handle_session_status,
     "authenticate": handle_authenticate,
-    "browser_profile": handle_browser_profile,
+    "browser_launcher": handle_browser_launcher,
     "tab_list": handle_tab_list,
     "tab_new": handle_tab_new,
     "tab_switch": handle_tab_switch,

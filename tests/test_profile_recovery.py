@@ -88,7 +88,7 @@ class ProfileRecoveryTests(unittest.IsolatedAsyncioTestCase):
                     if stage == 'connect':
                         session._connect.side_effect = asyncio.CancelledError()
                     with self.assertRaises(asyncio.CancelledError):
-                        await session.browser_profile('switch', 'Work')
+                        await session.browser_launcher('open', 'Work')
                     self.assertEqual((session.selected_profile, session.page, session.state_file), old[:3])
                     self.assertIs(session.auth_manager, old[3])
                     self.assertEqual(session._last_pages, old_pages)
@@ -97,7 +97,7 @@ class ProfileRecoveryTests(unittest.IsolatedAsyncioTestCase):
         self.session._select('Default', object())
         auth = self.session.auth_manager
         self.session._connect = AsyncMock(side_effect=RuntimeError('offline'))
-        self.assertFalse((await self.session.browser_profile('switch', 'Work'))['success'])
+        self.assertFalse((await self.session.browser_launcher('open', 'Work'))['success'])
         self.assertIs(self.session.auth_manager, auth)
 
     def test_malformed_local_state_shapes_are_safe(self):

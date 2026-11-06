@@ -24,7 +24,7 @@ class ToolSerializationTests(unittest.IsolatedAsyncioTestCase):
         with patch("browser_mcp.server.dispatch_tool", dispatch):
             reader = asyncio.create_task(handle_call_tool("browse_page", {}))
             await entered.wait()
-            switch = asyncio.create_task(handle_call_tool("browser_profile", {"action": "switch", "profile": "Work"}))
+            switch = asyncio.create_task(handle_call_tool("browser_launcher", {"action": "open", "profile": "Work"}))
             await asyncio.sleep(0)
             await asyncio.sleep(0)
             try:
@@ -32,7 +32,7 @@ class ToolSerializationTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 release.set()
                 await asyncio.gather(reader, switch)
-            self.assertEqual(history, [("browse_page", "start"), ("browse_page", "end"), ("browser_profile", "start"), ("browser_profile", "end")])
+            self.assertEqual(history, [("browse_page", "start"), ("browse_page", "end"), ("browser_launcher", "start"), ("browser_launcher", "end")])
 
     async def test_failed_tool_releases_lock(self):
         async def dispatch(session, name, arguments):
@@ -42,5 +42,5 @@ class ToolSerializationTests(unittest.IsolatedAsyncioTestCase):
         with patch("browser_mcp.server.dispatch_tool", dispatch):
             failed = await handle_call_tool("browse_page", {})
             self.assertFalse(json.loads(failed[0].text)["success"])
-            result = await asyncio.wait_for(handle_call_tool("browser_profile", {"action": "list"}), 1)
+            result = await asyncio.wait_for(handle_call_tool("browser_launcher", {"action": "list_profiles"}), 1)
             self.assertTrue(json.loads(result[0].text)["success"])

@@ -73,8 +73,10 @@ class BrowserSession:
         self._context_profiles.clear()
         if not self.playwright:
             self.playwright = await async_playwright().start()
+        # This is the user's browser: preserve native downloads, focus and media
+        # settings instead of redirecting downloads into Playwright's temp files.
         try:
-            self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
+            self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url, no_defaults=True)
         except Exception:
             executable = resolve_chrome_executable()
             if not executable:
@@ -85,7 +87,7 @@ class BrowserSession:
             for _ in range(24):
                 await asyncio.sleep(.25)
                 try:
-                    self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url)
+                    self.browser = await self.playwright.chromium.connect_over_cdp(self.cdp_url, no_defaults=True)
                     break
                 except Exception:
                     pass
@@ -187,10 +189,10 @@ class BrowserSession:
             logger.error("Failed to start browser session: %s", error)
             return False
 
-    async def browser_profile(self, action=None, profile=None):
-        if action not in ("list", "switch"):
-            return {"success": False, "error": "Action must be 'list' or 'switch'."}
-        if action == "list":
+    async def browser_launcher(self, action=None, profile=None):
+        if action not in ("list_profiles", "open"):
+            return {"success": False, "error": "Action must be 'list_profiles' or 'open'."}
+        if action == "list_profiles":
             # Read disk even when detached; do not connect or launch as a side effect.
             open_profiles = set()
             connected = bool(self.browser and self.browser.is_connected())
