@@ -26,10 +26,10 @@ async def run_safety_tests():
     assert is_internal_url("about:version") is True
     assert is_internal_url("chrome://new-tab-page/") is True
     assert is_internal_url("chrome://settings/") is True
-    assert is_internal_url("chrome-extension://oedggboaecbkcpnmkmdglidmfblggplg/offscreen.html") is True
+    assert is_internal_url("chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/offscreen.html") is True
     assert is_internal_url("devtools://devtools/bundled/inspector.html") is True
     assert is_internal_url("edge://settings") is True
-    assert is_internal_url("https://jira.walmart.com") is False
+    assert is_internal_url("https://example.com") is False
     assert is_internal_url("http://127.0.0.1:8000") is False
     print("TEST 1 PASSED: is_internal_url correctly identifies internal and external schemes.\n")
 
